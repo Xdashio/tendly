@@ -1,0 +1,32 @@
+[package]
+name = "tendly"
+version = "0.1.0"
+description = "Privacy-first, local-first AI-assisted time-awareness desktop application"
+authors = ["Tendly Contributors"]
+license = "MPL-2.0"
+repository = "https://github.com/tendly/tendly"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "tendly_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = ["tray-icon"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.33", features = ["bundled", "time", "uuid"] }
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.15", features = ["v4", "serde"] }
+tokio = { version = "1.43", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3.17"
