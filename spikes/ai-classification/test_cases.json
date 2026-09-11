@@ -1,0 +1,66 @@
+[
+  {
+    "id": 1,
+    "context_profile": "Software engineer working on a web app backend.",
+    "recent_blocks": ["VS Code - api/routes.py", "VS Code - api/models.py"],
+    "block": {"app": "code", "title": "api/routes.py - myproject - Visual Studio Code", "url": null},
+    "expected": "focus",
+    "note": "clear coding activity in an IDE, matches stated role"
+  },
+  {
+    "id": 2,
+    "context_profile": "Software engineer working on a web app backend.",
+    "recent_blocks": ["VS Code - api/routes.py"],
+    "block": {"app": "firefox", "title": "How to fix CORS error in Flask - Stack Overflow", "url": "stackoverflow.com/..."},
+    "expected": "focus",
+    "note": "the ambiguous case Drifty's blog post specifically calls out — research related to the task, not distraction"
+  },
+  {
+    "id": 3,
+    "context_profile": "Software engineer working on a web app backend.",
+    "recent_blocks": ["VS Code - api/routes.py"],
+    "block": {"app": "firefox", "title": "10 Cats That Look Like Disapproving Landlords - BuzzFeed", "url": "buzzfeed.com/..."},
+    "expected": "drift",
+    "note": "same app as case 2, different content — tests whether classifier is reading title/context, not just app name"
+  },
+  {
+    "id": 4,
+    "context_profile": "Software engineer working on a web app backend.",
+    "recent_blocks": [],
+    "block": {"app": "slack", "title": "#backend-team", "url": null},
+    "expected": "neutral",
+    "note": "communication tool — work-adjacent but not deep focus; tests the neutral bucket, not just a binary focus/drift split"
+  },
+  {
+    "id": 5,
+    "context_profile": "Student studying for a biology exam.",
+    "recent_blocks": ["Firefox - Khan Academy - Cell Biology"],
+    "block": {"app": "youtube", "title": "Mitosis vs Meiosis Explained - CrashCourse Biology", "url": "youtube.com/..."},
+    "expected": "focus",
+    "note": "YouTube can be focus or drift depending entirely on context — this is the case ActivityWatch's raw category system cannot handle at all"
+  },
+  {
+    "id": 6,
+    "context_profile": "Student studying for a biology exam.",
+    "recent_blocks": ["Firefox - Khan Academy - Cell Biology"],
+    "block": {"app": "youtube", "title": "Try Not To Laugh Challenge #47", "url": "youtube.com/..."},
+    "expected": "drift",
+    "note": "same app, different content, different verdict — the core test of context-aware classification"
+  },
+  {
+    "id": 7,
+    "context_profile": "Freelance graphic designer.",
+    "recent_blocks": ["Figma - Client logo v3"],
+    "block": {"app": "figma", "title": "Client logo v3", "url": null},
+    "expected": "focus",
+    "note": "straightforward positive control"
+  },
+  {
+    "id": 8,
+    "context_profile": "Freelance graphic designer.",
+    "recent_blocks": ["Figma - Client logo v3", "Figma - Client logo v3"],
+    "block": {"app": "instagram", "title": "Instagram", "url": "instagram.com"},
+    "expected": "drift",
+    "note": "straightforward negative control"
+  }
+]

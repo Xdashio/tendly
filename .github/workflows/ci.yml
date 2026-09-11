@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-markdown:
+    name: Lint documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for broken relative links in docs
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.github/mlc_config.json'
+
+  # Placeholder — real build/test jobs land with the first language choice
+  # in v0.1 (e.g. `cargo test`, `go test ./...`, or `pytest`). Keeping this
+  # job here now so CI is green from commit #1 and contributors see a
+  # working pipeline immediately, per the "signals this is a real project"
+  # goal in docs/PROBLEM_STATEMENT.md.
+  placeholder:
+    name: Repo structure sanity check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm core docs exist
+        run: |
+          test -f docs/PROBLEM_STATEMENT.md
+          test -f docs/ARCHITECTURE.md
+          test -f docs/LICENSE_DECISION.md
+          test -f LICENSE
+          test -f CONTRIBUTING.md
+          test -f CODE_OF_CONDUCT.md
+          echo "All required project docs present."
