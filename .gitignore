@@ -1,35 +1,39 @@
-# OS
-.DS_Store
-Thumbs.db
+# Rust / Cargo
+target/
+src-tauri/target/
+Cargo.lock
 
-# Editors
-.vscode/
-.idea/
-*.swp
-
-# Local data (never commit real activity data)
-*.db
-*.sqlite
-*.sqlite3
-tendly-data/
-
-# Secrets
-.env
-*.key
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Node
+# Node / Web
 node_modules/
 dist/
-build/
+dist-ssr/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
 
-# Rust
-target/
+# Database & SQLite files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Go
-bin/
+# OS & Temp
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE & Editor
+.idea/
+.vscode/
+*.iml
+
+# Environment & Local Secrets
+.env
+.env.*
+*.local
+
+# Logs
+logs/
+*.log

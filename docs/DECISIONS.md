@@ -396,3 +396,56 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 - Syncing across devices becomes a harder technical problem (requires end-to-end encryption, planned for future).
 
 **Reversibility:** Very Difficult. Reversing this would destroy user trust and violate the core ethos of the project.
+
+---
+
+### ADR-016: Application State and Mutex Concurrency Strategy in Tauri
+
+**Date:** 2026-09-11
+**Status:** Accepted
+
+**Context:** Phase 1 establishes the production Rust application core that must share database connections, runtime configuration, and tracking states between Tauri IPC commands and background watcher tasks.
+
+**Problem:** Selecting an in-process concurrency and state management architecture in Rust that guarantees thread safety, avoids race conditions, and maintains predictable performance.
+
+**Options Considered:**
+1. Global static `lazy_static` / `once_cell` singletons - Unidiomatic in modern Rust, difficult to isolate in unit tests.
+2. Tauri managed state (`app.manage(AppState)`) with `Arc<Mutex<T>>` - Type-safe, idiomatic Tauri pattern, clean dependency injection.
+3. Message-passing actor model for all state - Overengineered for initial phase, introduces latency for simple status reads.
+
+**Decision:** Use Tauri's native state management (`app.manage(AppState)`) combined with an `Arc<Mutex<Connection>>` for SQLite (configured with WAL mode, `NORMAL` synchronous mode, and a 5000ms busy timeout), and `Arc<Mutex<TrackingState>>` for session status.
+
+**Rationale:** Tauri's `State<'_, AppState>` injection allows commands to cleanly access shared state. SQLite's WAL mode permits concurrent readers with a serialized writer, protected by the Mutex and connection busy handler.
+
+**Consequences:**
+- Deterministic, panic-free state access across asynchronous IPC invocations.
+- Testable: `DatabaseManager::open_in_memory()` can be instantiated in test fixtures without global state pollution.
+- Thread contention is negligible given 3-minute block aggregation intervals.
+
+**Reversibility:** Moderate. Can be upgraded to connection pooling (`r2d2`) if concurrent write volume increases in later phases.
+
+---
+
+### ADR-017: Privacy-Preserving Structured Logging Policy
+
+**Date:** 2026-09-11
+**Status:** Accepted
+
+**Context:** Desktop applications require diagnostic logging for error analysis and troubleshooting. However, Tendly monitors user window titles and system activity.
+
+**Problem:** How to provide useful operational logs without accidentally recording sensitive personal activity, proprietary code names, URLs, or secrets.
+
+**Options Considered:**
+1. Unfiltered logging with disclaimer - Dangerous; users routinely paste logs into GitHub issues.
+2. No logging at all - Makes debugging application crashes or platform permission failures nearly impossible.
+3. Strict structural logging policy - Only log lifecycle events, component status, and sanitized error categories; explicitly prohibit logging window titles, URLs, file paths, and prompt contents.
+
+**Decision:** Adopt a strict structural logging policy using `tracing` and `tracing-subscriber`.
+
+**Rationale:** The logging policy is enforced at the architecture level. Default logs are guaranteed safe to share publicly in bug reports. Raw activity strings (`RawEvent.title`, `RawEvent.url`, `RawEvent.app`) are never logged.
+
+**Consequences:**
+- User activity remains private even if logs are shared or inspected.
+- Diagnostic logs focus on component state transitions and error codes rather than user content.
+
+**Reversibility:** Low. Privacy guarantees are foundational to Tendly's trust model.
