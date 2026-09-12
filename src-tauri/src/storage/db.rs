@@ -125,6 +125,70 @@ impl DatabaseManager {
         queries::get_recent_raw_events(&conn, limit)
     }
 
+    pub fn get_raw_events_range(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<crate::domain::RawEvent>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_raw_events_range(&conn, start_ms, end_ms)
+    }
+
+    pub fn get_earliest_raw_event_timestamp(&self) -> Result<Option<i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_earliest_raw_event_timestamp(&conn)
+    }
+
+    pub fn get_latest_time_block_timestamp(&self) -> Result<Option<i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_latest_time_block_timestamp(&conn)
+    }
+
+    pub fn insert_time_block(&self, block: &crate::domain::TimeBlock) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::insert_time_block(&conn, block)
+    }
+
+    pub fn insert_time_blocks_batch(&self, blocks: &[crate::domain::TimeBlock]) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::insert_time_blocks_batch(&mut conn, blocks)
+    }
+
+    pub fn get_time_blocks_range(
+        &self,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<crate::domain::TimeBlock>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_time_blocks_range(&conn, start_ms, end_ms)
+    }
+
+    pub fn get_recent_time_blocks(&self, limit: usize) -> Result<Vec<crate::domain::TimeBlock>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_recent_time_blocks(&conn, limit)
+    }
+
     pub fn db_path(&self) -> &Path {
         &self.db_path
     }
@@ -138,7 +202,7 @@ mod tests {
     fn test_open_in_memory_and_migrate() {
         let db = DatabaseManager::open_in_memory().expect("Must open in-memory db");
         let version = db.get_schema_version().expect("Must read schema version");
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 
     #[test]

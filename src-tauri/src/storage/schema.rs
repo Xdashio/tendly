@@ -58,3 +58,9 @@ CREATE TABLE IF NOT EXISTS app_state (
     updated_at_ms INTEGER NOT NULL
 );
 "#;
+
+pub const MIGRATION_002_TIME_BLOCK_METADATA: &str = r#"
+ALTER TABLE blocks ADD COLUMN activity_type TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE blocks ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 180000;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_unique_start ON blocks(start_ms);
+"#;

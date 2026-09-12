@@ -21,8 +21,8 @@ fn test_database_initialization_and_migrations() {
     let db = DatabaseManager::open_in_memory().expect("Must open in-memory database");
     let version = db.get_schema_version().expect("Must fetch schema version");
     assert_eq!(
-        version, 1,
-        "Schema version must be 1 after foundation migration"
+        version, 2,
+        "Schema version must be 2 after applying migrations"
     );
 
     let stats = db.get_stats().expect("Must fetch database stats");

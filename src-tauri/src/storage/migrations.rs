@@ -1,5 +1,7 @@
 use crate::core::error::{AppError, Result};
-use crate::storage::schema::{MIGRATION_001_FOUNDATION, MIGRATION_TABLE_DDL};
+use crate::storage::schema::{
+    MIGRATION_001_FOUNDATION, MIGRATION_002_TIME_BLOCK_METADATA, MIGRATION_TABLE_DDL,
+};
 use rusqlite::{Connection, Transaction};
 
 struct Migration {
@@ -8,11 +10,18 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    description: "001_initial_foundation",
-    sql: MIGRATION_001_FOUNDATION,
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        description: "001_initial_foundation",
+        sql: MIGRATION_001_FOUNDATION,
+    },
+    Migration {
+        version: 2,
+        description: "002_time_block_metadata",
+        sql: MIGRATION_002_TIME_BLOCK_METADATA,
+    },
+];
 
 pub fn run_migrations(conn: &mut Connection) -> Result<i32> {
     // 1. Ensure migrations table exists
