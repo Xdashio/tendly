@@ -75,6 +75,7 @@ mod tests {
 
     #[test]
     fn test_domain_subdomain_match() {
+        assert!(matches_domain("www.github.com", "github.com"));
         assert!(matches_domain("gist.github.com", "github.com"));
         assert!(matches_domain("api.github.com", "github.com"));
         assert!(matches_domain(
@@ -86,10 +87,12 @@ mod tests {
 
     #[test]
     fn test_domain_boundary_spoof_prevention() {
-        // Must NOT match prefixes that are different domains
+        // Must NOT match prefixes or suffixes that are different domains
         assert!(!matches_domain("notgithub.com", "github.com"));
+        assert!(!matches_domain("evil-github.com", "github.com"));
         assert!(!matches_domain("fakegithub.com", "github.com"));
         assert!(!matches_domain("my-github.com", "github.com"));
+        assert!(!matches_domain("github.com.attacker.test", "github.com"));
         assert!(!matches_domain("github.com.evil.test", "github.com"));
         assert!(!matches_domain("example.com.evil.test", "example.com"));
     }

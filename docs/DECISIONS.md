@@ -716,20 +716,22 @@ Phase 6 introduces activity classification to convert raw desktop and browser ob
 **Decision:**
 1. **Taxonomy:** Establish a controlled 9-category taxonomy: `development`, `communication`, `research`, `productivity`, `design`, `entertainment`, `system`, `browsing`, `unknown`.
 2. **Precedence Hierarchy:**
-   - User Rules (priority 1000..1999) > Default Rules (priority 100..999) > Generic Fallbacks (priority 0..99).
-   - Within each tier: Domain Match > Title Match > Application Match.
-   - Deterministic tie-breaker: sort rules once by `(priority DESC, rule_id ASC)`.
+   - User Rules (`RuleSource::User`) > Default Rules (`RuleSource::Default`).
+   - Within each source tier: `priority DESC`.
+   - At equal priority: Specificity `AppAndDomain (5)` > `AppAndTitle (4)` > `Domain (3)` > `TitleContains (2)` > `App (1)`.
+   - At equal specificity: `pattern.len() DESC`.
+   - Deterministic tie-breaker: `rule_id ASC`.
 3. **Lossless Integration:**
    - `ActivitySegment`s are classified during reconstruction from raw events.
    - 3-minute `TimeBlock`s aggregate category durations and select the dominant category via plurality active duration.
    - `ActivitySession`s compute a full `category_breakdown` and determine the session `dominant_category`.
    - Idempotent historical reprocessing recalculates classifications from canonical raw events.
-4. **Explainability:** All classifications output `ClassificationResult` containing `category`, `confidence`, `source`, `rule_id`, `matched_by`, and human-readable `explanation`.
+4. **Explainability:** All classifications output `ClassificationResult` containing `category`, `source`, `rule_id`, `matched_field`, `pattern`, and human-readable `explanation` (no arbitrary confidence numbers).
 5. **No Productivity Judgment:** Tendly treats categories as objective operational classifications, never assigning distraction penalties or productivity scores.
 
 **Rationale:**
 - 100% deterministic, testable, and reproducible across platforms.
-- Instantaneous sub-millisecond evaluation with zero memory/CPU overhead.
+- Classification uses pre-sorted in-memory rules and simple string matching. It performs no network requests, regular-expression evaluation, or database scans during ordinary classification.
 - Total transparency: users can see exactly why every minute was categorized.
 - Seamless compatibility with future Phase 7 local LLM summarization.
 

@@ -31,20 +31,37 @@ impl std::str::FromStr for Classification {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MatchField {
-    App,
+    AppAndDomain,
+    AppAndTitle,
     Domain,
     TitleContains,
+    App,
 }
 
 impl MatchField {
     pub fn as_str(&self) -> &'static str {
         match self {
-            MatchField::App => "app",
+            MatchField::AppAndDomain => "app_and_domain",
+            MatchField::AppAndTitle => "app_and_title",
             MatchField::Domain => "domain",
             MatchField::TitleContains => "title_contains",
+            MatchField::App => "app",
+        }
+    }
+
+    /// Specificity ranking for conflict resolution at equal priority.
+    /// Higher values indicate higher semantic specificity:
+    /// AppAndDomain (5) > AppAndTitle (4) > Domain (3) > TitleContains (2) > App (1).
+    pub fn specificity(&self) -> u8 {
+        match self {
+            MatchField::AppAndDomain => 5,
+            MatchField::AppAndTitle => 4,
+            MatchField::Domain => 3,
+            MatchField::TitleContains => 2,
+            MatchField::App => 1,
         }
     }
 }
@@ -54,6 +71,8 @@ impl std::str::FromStr for MatchField {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "app_and_domain" => Ok(MatchField::AppAndDomain),
+            "app_and_title" => Ok(MatchField::AppAndTitle),
             "app" => Ok(MatchField::App),
             "domain" => Ok(MatchField::Domain),
             "title_contains" => Ok(MatchField::TitleContains),

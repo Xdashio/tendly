@@ -5,7 +5,7 @@
 Tendly provides deterministic, explainable, and local-only activity classification. The classification engine runs entirely offline within the Rust core, assigning observations to a controlled 9-category taxonomy without cloud telemetry, heuristics, embeddings, or machine learning models.
 
 The system is designed with three core principles:
-1. **Explainability**: Every classification decision produces a traceable reason (`rule_id`, `matched_by`, and a human-readable `explanation`).
+1. **Explainability**: Every classification decision produces a traceable reason (`rule_id`, `matched_field`, `pattern`, and a human-readable `explanation`).
 2. **Neutrality**: Categories are descriptive, not judgmental. Tendly does not calculate productivity or distraction scores.
 3. **Lossless Pipeline**: Raw events and analytical time blocks remain canonical. Classifications are computed deterministically during segment reconstruction and aggregated into time blocks and user-facing activity sessions.
 
@@ -41,71 +41,50 @@ Rule Engine Evaluation
     │
     ├─► 1. Is activity_type == Afk? ────► Category: Unknown ("User idle / Away from keyboard")
     │
-    ├─► 2. User Rules (Priority 1000..1999)
-    │       └─► Domain Match > Title Match > App Match
+    ├─► 2. Active Rules Precedence:
+    │       Rule Source (User > Default)
+    │       └─► Priority (DESC)
+    │           └─► Specificity (AppAndDomain > AppAndTitle > Domain > TitleContains > App)
+    │               └─► Pattern Length (DESC)
+    │                   └─► Rule ID (ASC deterministic tie-breaker)
     │
-    ├─► 3. Default Rules (Priority 100..999)
-    │       └─► Domain Match > Title Match > App Match
+    ├─► 3. Browser Fallback:
+    │       └─► Recognized browser without domain rule: Browsing
     │
-    └─► 4. Generic Fallback (Priority 0..99)
-            └─► Browser generic fallback: Browsing
+    └─► 4. Generic Fallback:
             └─► Unmatched process: Unknown
 ```
 
 ### Precedence Algorithm
 
-1. **Precedence Tiers**:
-   - **User Rules**: Priority 1000 to 1999. User-configured rules always take precedence over system defaults.
-   - **Default Rules**: Priority 100 to 999. Developer-focused built-in defaults.
-   - **Generic Fallback**: Priority 0 to 99. Fallback for recognized browser applications (`browsing`) or unrecognized processes (`unknown`).
+Rules are sorted once upon engine creation according to Tendly's explicit deterministic ordering:
 
-2. **Condition Specificity**:
-   Within any priority tier, rules are evaluated by matcher specificity:
-   - **Domain Match**: Most specific. When browser context is available (e.g. `github.com`), domain matching supersedes application matching.
-   - **Title Match**: Case-insensitive substring matching against window titles or page titles.
-   - **App Match**: Exact case-insensitive matching against normalized application identifiers (`WM_CLASS` / Hyprland class).
+1. **Rule Source**: User rules (`RuleSource::User`, order 2) always take precedence over Default rules (`RuleSource::Default`, order 1).
+2. **Priority**: Descending integer (`priority DESC`).
+3. **Condition Specificity Ranking**: At equal priority, rules are ordered by condition specificity (`specificity DESC`):
+   - `AppAndDomain` (rank 5): Matches both application identity and browser domain.
+   - `AppAndTitle` (rank 4): Matches both application identity and window/page title.
+   - `Domain` (rank 3): Matches browser domain or subdomain.
+   - `TitleContains` (rank 2): Substring match against window or page title.
+   - `App` (rank 1): Exact match against application process name / class.
+4. **Pattern Length**: Descending length (`pattern.len() DESC`), ensuring more specific patterns match before shorter prefixes.
+5. **Deterministic Tie-Breaker**: Ascending rule identifier (`rule_id ASC`).
 
-3. **Deterministic Tie-Breaking**:
-   Rules are sorted once upon engine creation by:
-   - `priority DESC`
-   - `rule_id ASC` (deterministic alphabetical tie-breaker)
-   The first matching rule terminates evaluation.
+The first matching rule terminates evaluation.
 
 ---
 
-## 4. Default Ruleset Reference
+## 4. Domain Matching Semantics
 
-### Development
-- **Applications**: `code`, `vscodium`, `cursor`, `idea`, `clion`, `pycharm`, `webstorm`, `rustrover`, `sublime_text`, `alacritty`, `kitty`, `wezterm`, `gnome-terminal`, `konsole`, `xterm`, `foot`, `ghostty`, `zed`, `emacs`, `neovim`
-- **Domains**: `github.com`, `gitlab.com`, `stackoverflow.com`, `crates.io`, `docs.rs`, `npm.im`, `localhost`, `127.0.0.1`
-- **Title Patterns**: `pull request`, `merge request`, `commit`, `vim`, `nvim`, `cargo`, `git`
+Domain matching in `matches_domain(input_domain, pattern)` evaluates host and arbitrary subdomains on strict dot boundaries:
 
-### Communication
-- **Applications**: `slack`, `discord`, `teams`, `zoom`, `thunderbird`, `telegram-desktop`, `signal-desktop`, `element`, `hexchat`
-- **Domains**: `slack.com`, `discord.com`, `meet.google.com`, `zoom.us`, `teams.microsoft.com`, `web.telegram.org`
-- **Title Patterns**: `meet:`, `zoom meeting`, `call with`
-
-### Research
-- **Domains**: `developer.mozilla.org`, `devdocs.io`, `wikipedia.org`, `duckduckgo.com`, `google.com/search`, `arxiv.org`
-- **Title Patterns**: `documentation`, `api reference`, `handbook`, `specifications`, `manual`
-
-### Productivity
-- **Applications**: `obsidian`, `notion`, `linear`, `jira`, `libreoffice`, `evince`, `okular`
-- **Domains**: `notion.so`, `linear.app`, `atlassian.net`, `trello.com`, `docs.google.com`, `sheets.google.com`
-
-### Design
-- **Applications**: `figma`, `gimp`, `inkscape`, `blender`, `penpot`
-- **Domains**: `figma.com`, `excalidraw.com`, `draw.io`
-
-### Entertainment
-- **Applications**: `spotify`, `steam`, `vlc`, `mpv`
-- **Domains**: `youtube.com`, `netflix.com`, `twitch.tv`, `reddit.com`, `x.com`, `twitter.com`
-
-### System
-- **Applications**: `nautilus`, `thunar`, `dolphin`, `gnome-control-center`, `pavucontrol`, `htop`, `btop`, `systemsettings`
-
-### Browsing (Generic Fallback)
-- **Applications**: `firefox`, `chrome`, `chromium`, `brave-browser`, `google-chrome`, `microsoft-edge`, `opera`, `vivaldi`
+- **Definition**: A domain rule matches the exact host or any subdomain on a dot boundary (`*.<pattern>`).
+- **Valid Matches**:
+  - Exact host: `github.com` matches `github.com` (case-insensitive, whitespace and trailing dots trimmed).
+  - Subdomains: `github.com` matches `www.github.com`, `gist.github.com`, `api.github.com`, and `sub.sub.github.com`.
+- **Spoof Prevention**:
+  - `github.com` does **not** match prefix variants: `notgithub.com`, `evil-github.com`, `fakegithub.com`.
+  - `github.com` does **not** match suffix/domain-spoof variants: `github.com.attacker.test`, `github.com.evil.test`.
 
 ---
 
@@ -116,10 +95,11 @@ Tendly aggregates raw activity into fixed 3-minute analytical units `[start_ms, 
 - During aggregation, the engine sums the active duration contributed by each observed category within the 180-second window.
 - The **plurality winner** (category with the largest cumulative active duration) becomes `TimeBlock.category`.
 - The rule identifier that determined the plurality winner is preserved in `TimeBlock.classified_by`.
+- Ties are broken deterministically by alphabetical order of category name.
 
 ### ActivitySession Dominant Category & Breakdown
 When `TimeBlock`s are coalesced into continuous `ActivitySession`s:
-- The session computes a **category breakdown** (`category_breakdown`), summarizing the exact total duration spent in each category.
+- The session computes a **category breakdown** (`category_breakdown`), summarizing the exact total duration spent in each category from the underlying segments.
 - The **dominant category** (`dominant_category`) is determined by plurality duration across all constituent time blocks and underlying segments.
 
 ### Explainability Output
@@ -127,20 +107,28 @@ Every classified segment contains structured metadata:
 ```json
 {
   "category": "development",
-  "confidence": 0.95,
-  "source": "default_rule",
-  "rule_id": "default-domain-github",
-  "matched_by": "domain:github.com",
-  "explanation": "Matched default domain rule for github.com"
+  "source": "rule",
+  "rule_id": "default:domain:github.com",
+  "matched_field": "domain",
+  "pattern": "github.com",
+  "explanation": "Browser domain 'github.com' matched rule 'default:domain:github.com'"
 }
 ```
 In the desktop UI, users can inspect any session to view the exact category breakdown, segment-by-segment classifications, and mouse-over rule explanations.
 
 ---
 
-## 6. Non-Goals and Boundary Constraints
+## 6. Performance Characteristics
+
+- **Zero Network / Database Overhead**: Classification uses pre-sorted in-memory rules and simple string matching. It performs no network requests, regular-expression evaluation, or database scans during ordinary classification.
+- **Single Traversal**: Rules are iterated in pre-sorted order; the first matching rule terminates evaluation.
+- **Idempotent Reprocessing**: Historical time blocks can be re-evaluated from raw events deterministically at any time without data loss or classification drift.
+
+---
+
+## 7. Non-Goals and Boundary Constraints
 
 1. **No Productivity Judgment**: Tendly categorizes what an activity is, never whether it is good, bad, or productive. A YouTube video watching a compiler design lecture or entertainment music stream are both processed objectively without judgment scores.
 2. **No Cloud Telemetry or APIs**: Classification runs entirely in-process in Rust without external network requests.
 3. **No Machine Learning or AI Models in Phase 6**: All classification in Phase 6 is deterministic and rules-based. Local AI and LLM summarization are reserved for Phase 7.
-4. **No Database Schema Mutations**: Time block classification utilizes existing columns (`category`, `classified_by`, `confidence`). Session category breakdowns are computed dynamically in-memory.
+4. **No Database Schema Mutations**: Time block classification utilizes existing columns (`category`, `classified_by`). Session category breakdowns are computed dynamically in-memory.

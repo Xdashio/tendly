@@ -51,14 +51,21 @@ export type ActivityCategory =
   | 'browsing'
   | 'unknown';
 
-export type ClassificationSource = 'user_rule' | 'default_rule' | 'generic_fallback';
+export type ClassificationSource = 'rule' | 'system_fallback' | 'unclassified';
+
+export type MatchField =
+  | 'app_and_domain'
+  | 'app_and_title'
+  | 'domain'
+  | 'title_contains'
+  | 'app';
 
 export interface ClassificationResult {
   category: ActivityCategory;
-  confidence: number;
   source: ClassificationSource;
-  rule_id: string;
-  matched_by: string;
+  rule_id?: string | null;
+  matched_field?: MatchField | null;
+  pattern?: string | null;
   explanation: string;
 }
 
@@ -368,10 +375,10 @@ export async function getSessionDetails(
           category: 'development',
           classification: {
             category: 'development',
-            confidence: 0.9,
-            source: 'default_rule',
-            rule_id: 'default-app-code',
-            matched_by: 'app:code',
+            source: 'rule',
+            rule_id: 'default:app:code',
+            matched_field: 'app',
+            pattern: 'code',
             explanation: 'Matched default application rule for code',
           },
         },
@@ -392,10 +399,10 @@ export async function getSessionDetails(
           category: 'research',
           classification: {
             category: 'research',
-            confidence: 0.85,
-            source: 'default_rule',
-            rule_id: 'default-title-doc',
-            matched_by: 'title:Documentation',
+            source: 'rule',
+            rule_id: 'default:title:documentation',
+            matched_field: 'title_contains',
+            pattern: 'documentation',
             explanation: 'Matched default title rule for documentation',
           },
         },
@@ -410,10 +417,10 @@ export async function getSessionDetails(
           category: 'communication',
           classification: {
             category: 'communication',
-            confidence: 0.9,
-            source: 'default_rule',
-            rule_id: 'default-app-slack',
-            matched_by: 'app:slack',
+            source: 'rule',
+            rule_id: 'default:app:slack',
+            matched_field: 'app',
+            pattern: 'slack',
             explanation: 'Matched default application rule for slack',
           },
         },
