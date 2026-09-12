@@ -2,6 +2,7 @@ pub mod capture;
 pub mod commands;
 pub mod core;
 pub mod domain;
+pub mod processing;
 pub mod storage;
 
 use crate::capture::{AfkWatcher, CapturePipeline, WatcherManager, WaylandWatcher, X11Watcher};
@@ -83,6 +84,9 @@ pub fn run() {
             commands::tracking::get_app_status,
             commands::tracking::get_capture_status,
             commands::tracking::toggle_tracking_pause,
+            commands::tracking::get_current_activity,
+            commands::tracking::get_recent_time_blocks,
+            commands::tracking::reprocess_time_blocks,
         ])
         .setup(|app| {
             tracing::info!("Tendly application setup completed");

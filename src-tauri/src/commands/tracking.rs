@@ -102,3 +102,28 @@ pub fn toggle_tracking_pause(state: State<'_, AppState>) -> Result<bool, crate::
 
     Ok(new_state)
 }
+
+#[tauri::command]
+pub fn get_current_activity(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::processing::CurrentActivityState>, crate::core::IpcError> {
+    crate::processing::ActivityProcessor::get_current_activity(&state.db)
+        .map_err(crate::core::IpcError::from)
+}
+
+#[tauri::command]
+pub fn get_recent_time_blocks(
+    limit: usize,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::domain::TimeBlock>, crate::core::IpcError> {
+    state
+        .db
+        .get_recent_time_blocks(limit)
+        .map_err(crate::core::IpcError::from)
+}
+
+#[tauri::command]
+pub fn reprocess_time_blocks(state: State<'_, AppState>) -> Result<usize, crate::core::IpcError> {
+    crate::processing::ActivityProcessor::rebuild_all_history(&state.db)
+        .map_err(crate::core::IpcError::from)
+}

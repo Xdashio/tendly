@@ -95,6 +95,14 @@ impl CapturePipeline {
                                     error = %e,
                                     "Failed persisting RawEvent to database"
                                 );
+                            } else {
+                                // Automatically aggregate current 6-minute window into TimeBlocks
+                                let window_start = (event.timestamp_ms - 360_000).max(0);
+                                let _ = crate::processing::ActivityProcessor::process_range(
+                                    &db,
+                                    window_start,
+                                    event.timestamp_ms,
+                                );
                             }
                         }
                     }
