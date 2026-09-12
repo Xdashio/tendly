@@ -9,32 +9,37 @@
   import {
     getAppInfo,
     getAppStatus,
+    getCaptureStatus,
     getDatabaseStats,
     toggleTrackingPause,
     isTauri,
     type AppInfo,
     type AppStatus,
+    type CaptureStatus,
     type DatabaseStats,
   } from './lib/api';
 
   let appInfo = $state<AppInfo | null>(null);
   let appStatus = $state<AppStatus | null>(null);
+  let captureStatus = $state<CaptureStatus | null>(null);
   let dbStats = $state<DatabaseStats | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let activeTab = $state<'overview' | 'storage' | 'architecture'>('overview');
+  let activeTab = $state<'overview' | 'capture' | 'storage' | 'architecture'>('overview');
 
   async function loadData() {
     loading = true;
     error = null;
     try {
-      const [info, status, db] = await Promise.all([
+      const [info, status, capture, db] = await Promise.all([
         getAppInfo(),
         getAppStatus(),
+        getCaptureStatus(),
         getDatabaseStats(),
       ]);
       appInfo = info;
       appStatus = status;
+      captureStatus = capture;
       dbStats = db;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -49,6 +54,12 @@
       if (appStatus) {
         appStatus.is_tracking_paused = nextState;
       }
+      if (captureStatus) {
+        captureStatus.is_tracking_paused = nextState;
+      }
+      // Refresh capture statuses
+      const updated = await getCaptureStatus();
+      captureStatus = updated;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -56,6 +67,23 @@
 
   onMount(() => {
     loadData();
+    // Periodic refresh of status every 3 seconds
+    const interval = setInterval(async () => {
+      try {
+        const [status, capture, db] = await Promise.all([
+          getAppStatus(),
+          getCaptureStatus(),
+          getDatabaseStats(),
+        ]);
+        appStatus = status;
+        captureStatus = capture;
+        dbStats = db;
+      } catch {
+        // Silently ignore background polling errors in browser mode
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
   });
 </script>
 
@@ -79,6 +107,14 @@
         System Overview
       </button>
       <button
+        onclick={() => (activeTab = 'capture')}
+        class="py-3 border-b-2 transition {activeTab === 'capture'
+          ? 'border-neutral-200 text-neutral-100 font-semibold'
+          : 'border-transparent text-neutral-400 hover:text-neutral-200'}"
+      >
+        Linux Watchers
+      </button>
+      <button
         onclick={() => (activeTab = 'storage')}
         class="py-3 border-b-2 transition {activeTab === 'storage'
           ? 'border-neutral-200 text-neutral-100 font-semibold'
@@ -92,7 +128,7 @@
           ? 'border-neutral-200 text-neutral-100 font-semibold'
           : 'border-transparent text-neutral-400 hover:text-neutral-200'}"
       >
-        Foundation Architecture
+        Capture Architecture
       </button>
     </div>
   </nav>
@@ -144,7 +180,7 @@
             </div>
             <div class="flex justify-between py-1 border-b border-neutral-800">
               <dt class="text-neutral-400">Active Watchers</dt>
-              <dd class="text-neutral-200">{appStatus?.active_watchers_count} (Phase 1 scaffolding)</dd>
+              <dd class="text-neutral-200">{captureStatus?.active_watchers_count ?? 0}</dd>
             </div>
             <div class="flex justify-between py-1">
               <dt class="text-neutral-400">Process Uptime</dt>
@@ -164,19 +200,78 @@
               <dd class="text-emerald-400">{appInfo?.database_status}</dd>
             </div>
             <div class="flex justify-between py-1">
-              <dt class="text-neutral-400">Recorded Blocks</dt>
-              <dd class="text-neutral-200">{dbStats?.blocks_count ?? 0}</dd>
+              <dt class="text-neutral-400">Raw Events Stored</dt>
+              <dd class="text-neutral-200">{dbStats?.raw_events_count ?? 0}</dd>
             </div>
           </dl>
         </Card>
       </div>
 
-      <Card title="Activity Timeline" subtitle="Planned for Phase 2 implementation">
-        <EmptyState
-          title="No Activity Events Recorded"
-          description="Phase 1 establishes the production architecture, IPC bridge, and database foundation. Activity capture watchers (X11, wlroots Wayland, AFK) will be connected in Phase 2."
-        />
+      <Card title="Linux Activity Capture Subsystem" subtitle="Phase 2 production capture status">
+        <div class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+            {#each captureStatus?.watchers ?? [] as watcher}
+              <div class="border border-neutral-800 p-3 rounded bg-neutral-950">
+                <div class="flex justify-between items-center mb-2">
+                  <span class="font-semibold text-neutral-200">{watcher.name}</span>
+                  <Badge
+                    variant={watcher.running ? (watcher.paused ? 'warning' : 'success') : (watcher.supported ? 'neutral' : 'error')}
+                    text={watcher.running ? (watcher.paused ? 'Paused' : 'Capturing') : (watcher.supported ? 'Standby' : 'Unsupported')}
+                  />
+                </div>
+                <div class="space-y-1 text-neutral-400 text-[11px]">
+                  <div>Supported: <span class={watcher.supported ? 'text-emerald-400' : 'text-neutral-500'}>{watcher.supported ? 'Yes' : 'No'}</span></div>
+                  <div>Running: <span class={watcher.running ? 'text-emerald-400' : 'text-neutral-500'}>{watcher.running ? 'Yes' : 'No'}</span></div>
+                  <div>Paused: <span class={watcher.paused ? 'text-amber-400' : 'text-neutral-500'}>{watcher.paused ? 'Yes' : 'No'}</span></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
       </Card>
+    {:else if activeTab === 'capture'}
+      <div class="space-y-5">
+        <Card title="Registered Activity Watchers" subtitle="In-process Rust capture threads">
+          <div class="space-y-4 text-xs font-mono">
+            {#each captureStatus?.watchers ?? [] as watcher}
+              <div class="border border-neutral-800 p-4 rounded bg-neutral-950 space-y-2">
+                <div class="flex justify-between items-center border-b border-neutral-800/80 pb-2">
+                  <span class="text-sm font-semibold text-neutral-100">{watcher.name}</span>
+                  <Badge
+                    variant={watcher.running ? (watcher.paused ? 'warning' : 'success') : (watcher.supported ? 'neutral' : 'error')}
+                    text={watcher.running ? (watcher.paused ? 'Paused' : 'Running') : (watcher.supported ? 'Supported' : 'Unsupported')}
+                  />
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-neutral-400 pt-1">
+                  <div>Environment Supported: <span class={watcher.supported ? 'text-emerald-400' : 'text-neutral-500'}>{watcher.supported ? 'Yes' : 'No'}</span></div>
+                  <div>Worker Thread: <span class={watcher.running ? 'text-emerald-400' : 'text-neutral-500'}>{watcher.running ? 'Active' : 'Inactive'}</span></div>
+                  <div>Capture State: <span class={watcher.paused ? 'text-amber-400' : 'text-emerald-400'}>{watcher.paused ? 'Paused' : 'Active'}</span></div>
+                  <div>Error Code: <span class="text-neutral-400">{watcher.last_error ?? 'None'}</span></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </Card>
+
+        <Card title="Capture Stream Statistics" subtitle="Real activity metrics">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+            <div class="border border-neutral-800 p-3 rounded bg-neutral-950">
+              <div class="text-neutral-500 text-[11px] uppercase">Raw Events Persisted</div>
+              <div class="text-xl font-semibold text-neutral-100 mt-1">{dbStats?.raw_events_count ?? 0}</div>
+            </div>
+            <div class="border border-neutral-800 p-3 rounded bg-neutral-950">
+              <div class="text-neutral-500 text-[11px] uppercase">Active Watcher Count</div>
+              <div class="text-xl font-semibold text-neutral-100 mt-1">{captureStatus?.active_watchers_count ?? 0}</div>
+            </div>
+            <div class="border border-neutral-800 p-3 rounded bg-neutral-950">
+              <div class="text-neutral-500 text-[11px] uppercase">Tracking State</div>
+              <div class="text-xl font-semibold {captureStatus?.is_tracking_paused ? 'text-amber-400' : 'text-emerald-400'} mt-1">
+                {captureStatus?.is_tracking_paused ? 'PAUSED' : 'TRACKING'}
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
     {:else if activeTab === 'storage'}
       <div class="space-y-5">
         <Card title="Local Storage Details" subtitle="Strictly on-device SQLite database">
@@ -214,30 +309,37 @@
         </Card>
       </div>
     {:else if activeTab === 'architecture'}
-      <Card title="System Architecture Boundaries" subtitle="Validated in Phase 0, scaffolded in Phase 1">
+      <Card title="Linux Activity Capture Pipeline" subtitle="Implemented in Phase 2">
         <div class="space-y-4 text-xs font-mono text-neutral-300 leading-relaxed">
           <div class="p-3 rounded bg-neutral-950 border border-neutral-800">
-            <div class="font-semibold text-neutral-100 mb-1">Architecture B (Direct In-Process Model)</div>
+            <div class="font-semibold text-neutral-100 mb-1">X11 Activity Watcher (`x11rb`)</div>
             <p class="text-neutral-400">
-              Svelte 5 UI communicates with the Rust Application Core strictly through Tauri IPC (`invoke` commands and events).
-              No internal HTTP port is opened on 127.0.0.1, eliminating the local port-scanning attack surface.
+              Observes active window via `_NET_ACTIVE_WINDOW` and application name via `WM_CLASS`. Retrieves window title from `_NET_WM_NAME`.
+              Runs hybrid event-driven loop with 2s heartbeat.
             </p>
           </div>
 
           <div class="p-3 rounded bg-neutral-950 border border-neutral-800">
-            <div class="font-semibold text-neutral-100 mb-1">In-Process Watcher Pipeline (Phase 2 Target)</div>
+            <div class="font-semibold text-neutral-100 mb-1">Wayland wlroots Watcher (`wayland.rs`)</div>
             <p class="text-neutral-400">
-              OS-level watchers for Linux X11 (`x11rb`) and wlroots Wayland (`wayland-client`) will run as in-process Rust asynchronous
-              tasks on Tokio, feeding `RawEvent` structures directly through in-memory channels (`mpsc`) into SQLite.
+              Direct integration for Hyprland (`.socket2.sock`) and wlroots foreign toplevel management protocol.
+              Emits state changes with zero polling latency.
             </p>
           </div>
 
           <div class="p-3 rounded bg-neutral-950 border border-neutral-800">
-            <div class="font-semibold text-neutral-100 mb-1">3-Tier Classification Cascade (Phase 2 / Phase 3)</div>
+            <div class="font-semibold text-neutral-100 mb-1">AFK / Idle Detection (`afk.rs`)</div>
             <p class="text-neutral-400">
-              Tier 1: Deterministic Rules & Cache (0ms, 0 RAM) ->
-              Tier 2: Local AI via Ollama Qwen 2.5:3b (Optional) ->
-              Tier 3: User BYOK Cloud AI (Optional).
+              Tracks user inactivity threshold (default 300s) via XScreenSaver protocol and GNOME Mutter D-Bus `IdleMonitor`.
+              Emits clean transitions into and out of AFK state with zero redundant event flooding.
+            </p>
+          </div>
+
+          <div class="p-3 rounded bg-neutral-950 border border-neutral-800">
+            <div class="font-semibold text-neutral-100 mb-1">In-Memory Deduplication Filter (`pipeline.rs`)</div>
+            <p class="text-neutral-400">
+              Suppresses identical events occurring within a 60-second window, emitting only state changes and periodic checkpoints
+              directly to SQLite without burning disk I/O.
             </p>
           </div>
         </div>
@@ -246,7 +348,7 @@
   </main>
 
   <footer class="border-t border-neutral-800/80 bg-neutral-950 px-6 py-3 text-xs font-mono text-neutral-500 flex justify-between">
-    <span>Tendly Foundation Phase 1</span>
+    <span>Tendly Foundation Phase 2</span>
     <span>MPL-2.0 Open Source</span>
   </footer>
 </div>

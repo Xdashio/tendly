@@ -15,6 +15,22 @@ export interface AppStatus {
   uptime_seconds: number;
 }
 
+export interface WatcherStatus {
+  name: string;
+  supported: boolean;
+  running: boolean;
+  paused: boolean;
+  last_error: string | null;
+}
+
+export interface CaptureStatus {
+  is_tracking_paused: boolean;
+  active_watchers_count: number;
+  watchers: WatcherStatus[];
+  total_raw_events: number;
+  uptime_seconds: number;
+}
+
 export interface DatabaseStats {
   database_path: string;
   database_size_bytes: number;
@@ -52,6 +68,23 @@ export async function getAppStatus(): Promise<AppStatus> {
     };
   }
   return await invoke<AppStatus>('get_app_status');
+}
+
+export async function getCaptureStatus(): Promise<CaptureStatus> {
+  if (!isTauri()) {
+    return {
+      is_tracking_paused: false,
+      active_watchers_count: 0,
+      watchers: [
+        { name: 'watcher-x11', supported: false, running: false, paused: false, last_error: null },
+        { name: 'watcher-wayland', supported: false, running: false, paused: false, last_error: null },
+        { name: 'watcher-afk', supported: false, running: false, paused: false, last_error: null },
+      ],
+      total_raw_events: 0,
+      uptime_seconds: 0,
+    };
+  }
+  return await invoke<CaptureStatus>('get_capture_status');
 }
 
 export async function getDatabaseStats(): Promise<DatabaseStats> {

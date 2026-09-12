@@ -1,6 +1,6 @@
 <script lang="ts">
   interface Props {
-    variant?: 'default' | 'success' | 'warning' | 'neutral';
+    variant?: 'default' | 'success' | 'warning' | 'neutral' | 'error';
     text: string;
   }
 
@@ -11,6 +11,7 @@
     success: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60',
     warning: 'bg-amber-950/60 text-amber-300 border-amber-800/60',
     neutral: 'bg-neutral-900 text-neutral-400 border-neutral-800',
+    error: 'bg-rose-950/60 text-rose-300 border-rose-800/60',
   };
 </script>
 
