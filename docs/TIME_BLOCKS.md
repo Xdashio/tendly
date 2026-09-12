@@ -138,9 +138,56 @@ Deterministic TimeBlocks: [B0, B1, B2, ...] -> SQLite `blocks`
 
 ---
 
-## 5. Idempotency and Database Integrity
+## 5. Information Preservation and Composition
+
+### What Information Survives Plurality Attribution
+In each 3-minute epoch block (`[start_ms, end_ms)`):
+- `dominant_app` and `dominant_title`: The application and window title occupying the greatest active duration.
+- `activity_type`: The dominant state (`active`, `afk`, `unknown`).
+- `duration_ms`: Standardized duration (180,000 ms).
+
+### What Information is Intentionally Summarized
+- Sub-minute secondary activities (e.g., a 20-second documentation lookup in Firefox during 160 seconds of coding in VS Code) are summarized under the dominant activity for the analytical record.
+- This prevents downstream classification engines from choking on high-frequency context switching.
+
+### How Detailed Sub-Block Composition is Preserved Losslessly
+- **No information is permanently lost.** `raw_events` is the immutable canonical source of truth.
+- When downstream classification (Phase 6/7) or the user-facing timeline (Phase 4) requires the sub-minute breakdown of any block, `ActivityProcessor::get_block_composition(db, start_ms, end_ms)` reconstructs the exact contiguous `ActivitySegment`s on demand.
+- Measured performance: Querying and reconstructing a 3-minute window from indexed `raw_events` takes ~0.02 ms.
+- Storing denormalized JSON summaries inside `TimeBlock` was rejected to maintain single-source-of-truth integrity and avoid storage duplication.
+
+---
+
+## 6. Analytical Unit vs. User-Facing Timeline
+
+### TimeBlock is Primarily an Internal Analytical Unit
+- A `TimeBlock` (3-minute epoch) exists primarily for the classification and analytical engine.
+- Discrete, fixed-width blocks provide uniform tokens for rules-based and LLM-based categorization without context-window fragmentation.
+
+### User-Facing Representation (Phase 4 Progression)
+- Users do not think in rigid 3-minute slices. Slicing a 45-minute continuous coding session into fifteen 3-minute cards creates artificial visual clutter.
+- The user-facing timeline (Phase 4) presents **Activity Sessions / Runs** by visually coalescing adjacent compatible `TimeBlock`s that share the same dominant context (e.g., displaying `10:00 - 10:45 VS Code (45m)`).
+- Users can click or expand any session to inspect the underlying 3-minute blocks and sub-minute segment composition.
+
+---
+
+## 7. Reprocessing and Classification Staleness
+
+When historical raw events are reprocessed (due to late watcher backfill, synchronization, or algorithm updates), previously classified `TimeBlock` records are updated via `ON CONFLICT(start_ms) DO UPDATE`.
+
+### Staleness Invalidation Rules
+1. **Unchanged Derived Content** (`dominant_app`, `dominant_title`, and `activity_type` match):
+   - Automatic classification, category, confidence, and classifier attribution are preserved.
+   - User overrides are preserved.
+2. **Changed Derived Content** (`dominant_app`, `dominant_title`, or `activity_type` altered):
+   - **Automatic classification is strictly invalidated** (reset to `NULL`). A block originally classified as "Focus" under VS Code will never retain that label if reprocessing reveals the dominant activity was actually Slack.
+   - **User Override Scoping**: A user override is preserved only if `dominant_app` remains identical. If the dominant application changed, the user override is invalidated (reset to `NULL`) to prevent manual labels from corrupting different applications.
+
+---
+
+## 8. Idempotency and Database Integrity
 
 1. **Unique Constraint**: Each `TimeBlock` has a deterministic natural key or unique start time:
-   `UNIQUE(start_ms)` ensures that running aggregation over the same time range multiple times will `INSERT OR REPLACE` identical blocks without duplication.
-2. **Transactional Writes**: Blocks for an aggregated window are committed in an explicit SQLite transaction.
+   `UNIQUE(start_ms)` ensures that running aggregation over the same time range multiple times will update identical blocks deterministically with zero duplicates.
+2. **Deterministic UUID v5**: Block IDs are computed using UUID v5 from `timeblock:{start_ms}` in the URL namespace.
 3. **Vacuum / Rebuild Safe**: Dropping the `blocks` table and re-running historical aggregation from `raw_events` reproduces the exact same set of `TimeBlock`s.

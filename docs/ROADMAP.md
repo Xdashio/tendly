@@ -1,118 +1,99 @@
-# Tendly Roadmap
+# Tendly Authoritative Product Roadmap
 
 This document outlines the product roadmap for Tendly. Our approach focuses on delivering the smallest useful thing first, building around validated dependencies and user value. Each phase produces a verifiable outcome before moving to the next.
 
-## v0.1 — Linux Desktop MVP ("Where did my time go?")
+---
 
-**Verifiable outcome:** A developer on Linux (X11 or wlroots Wayland) can install Tendly, track their work for a day, and see a meaningful timeline of Focus/Neutral/Drift blocks.
+## Phase 1 — Production Foundation (Complete)
 
-**Features:**
-- Tauri desktop application with system tray.
-- X11 active window watcher (in-process, Rust).
-- wlroots Wayland watcher (wlr-foreign-toplevel protocol).
-- AFK/idle detection.
-- SQLite local storage.
-- Rules-based classification (Tier 1 only — no AI required).
-- Day timeline view (color-coded Focus/Neutral/Drift blocks).
-- Daily summary (total hours, F/N/D breakdown).
-- User can override classifications.
-- Pause/resume tracking.
-- Delete all data.
-- First-run onboarding.
-- Data inspection panel.
-- AppImage packaging.
+**Verifiable outcome:** Tauri 2.x desktop application running on Linux with native Svelte 5 UI, IPC communication, SQLite schema, and test harness.
 
-**Dependencies:** None (foundation phase).
-**Platform scope:** Linux (X11 & wlroots Wayland).
+---
 
-## v0.2 — Local AI Classification
+## Phase 2 — Linux Activity Capture (Complete)
 
-**Verifiable outcome:** Classification accuracy jumps from ~60% (rules) to ~85%+ with Ollama.
+**Verifiable outcome:** In-process X11 (`x11rb`) and wlroots Wayland window watchers observing active application and title, coupled with AFK idle detection and deduplicated persistence into SQLite `raw_events`.
 
-**Features:**
-- Ollama integration (qwen2.5:3b).
-- Structured output via `format` field.
-- User profile (role + current goals).
+---
+
+## Phase 3 — Activity Processing and Time-Block Aggregation (Complete)
+
+**Verifiable outcome:** Raw events deterministically aggregated into non-overlapping 3-minute epoch `TimeBlock`s via Model C hybrid bucketing. Idempotent history reprocessing, classification staleness invalidation, and on-demand segment composition.
+
+---
+
+## Phase 4 — Usable Timeline and Activity History (Current Target)
+
+**Verifiable outcome:** A developer can review a full day of tracked activity on a clean, responsive desktop timeline that coalesces adjacent compatible blocks into meaningful work sessions while allowing drill-down into exact sub-block composition.
+
+**Key Deliverables:**
+- Chronological day timeline visualization.
+- Session coalescing (e.g., merging continuous 3-minute blocks into `10:00 - 10:45 VS Code (45m)`).
+- Sub-block segment composition inspection modal/drawer.
+- Date navigation and historical review.
+- Initial unclassified / basic application-grouped presentation.
+
+---
+
+## Phase 5 — Browser Context
+
+**Verifiable outcome:** Browser activity accurately captured at the domain level (distinguishing Stack Overflow, GitHub, documentation, and distracting sites) via lightweight extensions communicating with Tendly core.
+
+**Key Deliverables:**
+- Privacy-preserving browser extension (domain-only by default).
+- Native messaging IPC bridge.
+- Domain context association with active window events.
+
+---
+
+## Phase 6 — Rules-Based Classification
+
+**Verifiable outcome:** Fast, deterministic Tier 1 classification engine categorizing unambiguous developer activities as Focus, Neutral, or Drift with zero CPU and memory overhead.
+
+**Key Deliverables:**
+- Default rules for developer tools, communications, and media.
+- User-defined classification rules editor.
+- Immediate deterministic classification of 60-70% of routine blocks.
+
+---
+
+## Phase 7 — Local AI Classification
+
+**Verifiable outcome:** Ambient local AI (Ollama `qwen2.5:3b`) contextually classifies ambiguous blocks based on active title, domain, user goals, and trajectory context.
+
+**Key Deliverables:**
+- In-process Ollama HTTP client with structured JSON output.
+- Automatic memory unloading on idle (`keep_alive`).
+- Optional BYOK cloud fallback (OpenRouter).
 - Low-confidence flagging ("Needs Review").
-- BYOK (Bring Your Own Key) cloud option (OpenRouter/Groq).
-- Classification settings UI.
 
-**Dependencies:** v0.1 (Base tracking and UI).
-**Platform scope:** Linux (X11 & wlroots Wayland).
+---
 
-## v0.3 — Browser Context
+## Phase 8 — User Corrections and Evaluation
 
-**Verifiable outcome:** Browser activity correctly distinguished (e.g., Stack Overflow = Focus, BuzzFeed = Drift).
+**Verifiable outcome:** Developer can override any incorrect classification directly in the timeline, with automatic rule generation and accuracy evaluation against historical ground truth.
 
-**Features:**
-- Chrome extension (Manifest V3).
-- Firefox extension (WebExtensions).
-- Native Messaging to loopback API.
-- Domain-level tracking (not full URLs by default).
-- Extension privacy controls.
+**Key Deliverables:**
+- One-click classification correction in UI.
+- Scoped rule generation from corrections.
+- Accuracy tracking and validation test fixtures.
 
-**Dependencies:** v0.1 (Data storage) and v0.2 (AI classification handles new browser context).
-**Platform scope:** Linux (Chrome/Firefox).
+---
 
-## v0.4 — Visualization & Review
+## Phase 9 — Dashboard and Reflection
 
-**Verifiable outcome:** User can understand weekly patterns and trends.
+**Verifiable outcome:** Developer receives meaningful daily and weekly awareness summaries, Focus/Neutral/Drift ratio analysis, and gentle reflection check-ins.
 
-**Features:**
-- Weekly heatmap.
-- Category breakdown charts.
-- Trend analysis (Focus ratio over time).
-- Data export (JSON/CSV).
+**Key Deliverables:**
+- Daily summary and time distribution metrics.
+- Weekly focus trend heatmaps.
+- Morning intention and evening review prompts.
+- Full data export (JSON/CSV) and nuclear data purge.
 
-**Dependencies:** v0.1 (Data structure) and v0.2 (Accurate classification data).
-**Platform scope:** Linux.
+---
 
-## v0.5 — Reflection & Intentions
+## Subsequent Platform Phases
 
-**Verifiable outcome:** User can set daily intentions and compare against actual activity.
-
-**Features:**
-- Morning intention check-in.
-- Drift-streak reflection prompts.
-- End-of-day review.
-
-**Dependencies:** v0.4 (Visualization UI).
-**Platform scope:** Linux.
-
-## v0.6 — Windows Support
-
-**Verifiable outcome:** Windows developer can use Tendly with full functionality.
-
-**Features:**
-- Win32 watcher (GetForegroundWindow + SetWinEventHook).
-- UWP app resolution (ApplicationFrameHost).
-- Windows idle detection + session lock.
-- MSI/NSIS installer.
-
-**Dependencies:** v0.5 (Mature core).
-**Platform scope:** Windows 10/11.
-
-## v0.7 — macOS Support
-
-**Verifiable outcome:** macOS developer can use Tendly.
-
-**Features:**
-- macOS watcher (NSWorkspace + Accessibility API).
-- macOS permission flow.
-- DMG packaging + notarization.
-
-**Dependencies:** v0.6 (Cross-platform architecture proven).
-**Platform scope:** macOS.
-
-## v0.8+ — Future
-
-**Features/Scope:**
-- KDE Plasma 6 Wayland support (KWin D-Bus).
-- GNOME Wayland support (Shell Extension).
-- Plugin/watcher API.
-- Graduated friction (opt-in interventions).
-- Encrypted multi-device sync (AGPL-3.0 component).
-- Auto-update functionality.
-
-**Dependencies:** v0.7 (Full initial cross-platform support).
-**Platform scope:** All platforms.
+- **Phase 10 — Windows Support:** Win32 foreground watcher, UWP resolution, Windows idle detection, NSIS installer.
+- **Phase 11 — macOS Support:** NSWorkspace watcher, Accessibility API title tracking, DMG packaging and notarization.
+- **Phase 12 — Extended Environments:** KDE Plasma 6 KWin D-Bus watcher, GNOME Shell extension.

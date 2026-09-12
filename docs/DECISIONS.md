@@ -570,3 +570,37 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 - Storage requirement for `raw_events` remains lightweight (< 500 KB per week).
 
 **Reversibility:** Very Difficult. Reversing raw event immutability would compromise data integrity.
+
+---
+
+### ADR-022: Classification Staleness Invalidation, User Override Scoping, and On-Demand Block Composition
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context:** During the Phase 3 review gate, two architectural concerns were audited: (1) what happens when historical reprocessing modifies a block's dominant application or title after it has been classified, and (2) whether plurality attribution discards sub-block detail that downstream classification or timeline views require.
+
+**Problem:**
+1. Blindly preserving existing classifications via `COALESCE` when `dominant_app` changes causes stale, false classifications (e.g., Slack retaining a "Focus" label previously assigned to VS Code).
+2. Slicing complex multi-tasking into a single plurality winner might hide secondary activities from future classifiers or timeline views.
+
+**Options Considered:**
+1. Blindly retain previous classification on conflict (`COALESCE`) - Rejected; causes stale classifications when raw history changes.
+2. Denormalize segment breakdown as JSON within each `TimeBlock` - Adds redundant storage (~28 KB/day) and duplicates data already indexed in `raw_events`.
+3. Invalidate automatic classification on content change, scope user overrides by app, and derive sub-block composition on demand from `raw_events`.
+
+**Decision:**
+1. On `TimeBlock` conflict resolution, automatic classifications (`classification`, `category`, `confidence`, `classified_by`) are preserved if and only if `dominant_app`, `dominant_title`, and `activity_type` remain identical. If any of these change, automatic classifications are reset to `NULL`.
+2. A `user_override` is preserved only if `dominant_app` remains identical. If the dominant application changed, the user override is invalidated (`NULL`) to avoid applying manual decisions to different software.
+3. Sub-block composition is not denormalized in `TimeBlock`. Instead, `ActivityProcessor::get_block_composition(start_ms, end_ms)` derives the exact contiguous `ActivitySegment`s on demand directly from `raw_events` with sub-millisecond query latency (~0.02 ms).
+
+**Rationale:**
+- Prevents corrupt or stale classification state during reprocessing.
+- Respects user manual overrides while preventing cross-application contamination.
+- Follows the single-source-of-truth principle without data duplication or premature schema bloat.
+
+**Consequences:**
+- Historical reprocessing is provably safe and self-healing.
+- Downstream classification (Phase 6/7) and timeline rendering (Phase 4) can inspect full sub-minute fidelity on demand.
+
+**Reversibility:** Moderate. Can add cached composition if profiling indicates query overhead in future phases.
