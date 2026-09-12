@@ -38,6 +38,32 @@ export interface DatabaseStats {
   blocks_count: number;
 }
 
+export type ActivityType = 'active' | 'afk' | 'unknown';
+
+export interface TimeBlock {
+  id: string;
+  start_ms: number;
+  end_ms: number;
+  duration_ms: number;
+  activity_type: ActivityType;
+  dominant_app: string;
+  dominant_title: string;
+  dominant_url: string | null;
+  classification: string | null;
+  category: string | null;
+  confidence: number | null;
+  classified_by: string | null;
+  user_override: string | null;
+}
+
+export interface CurrentActivityState {
+  active_app: string;
+  active_title: string;
+  activity_type: ActivityType;
+  current_block: TimeBlock | null;
+  elapsed_in_state_seconds: number;
+}
+
 export interface IpcError {
   code: string;
   message: string;
@@ -104,4 +130,31 @@ export async function toggleTrackingPause(): Promise<boolean> {
     return false;
   }
   return await invoke<boolean>('toggle_tracking_pause');
+}
+
+export async function getCurrentActivity(): Promise<CurrentActivityState | null> {
+  if (!isTauri()) {
+    return {
+      active_app: 'code',
+      active_title: 'Tendly - VS Code (Browser Preview)',
+      activity_type: 'active',
+      current_block: null,
+      elapsed_in_state_seconds: 42,
+    };
+  }
+  return await invoke<CurrentActivityState | null>('get_current_activity');
+}
+
+export async function getRecentTimeBlocks(limit: number = 20): Promise<TimeBlock[]> {
+  if (!isTauri()) {
+    return [];
+  }
+  return await invoke<TimeBlock[]>('get_recent_time_blocks', { limit });
+}
+
+export async function reprocessTimeBlocks(): Promise<number> {
+  if (!isTauri()) {
+    return 0;
+  }
+  return await invoke<number>('reprocess_time_blocks');
 }
