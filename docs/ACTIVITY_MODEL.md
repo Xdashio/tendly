@@ -33,9 +33,11 @@ A contiguous period where the same application + title was active.
 ### 3. TimeBlock
 A fixed-duration bucket for classification (default 3 minutes). The core unit that gets classified, containing the "dominant" activity (the activity that occupied the plurality of time within the block).
 - **Fields:**
-  - `id`: UUID (Primary Key)
-  - `start_ms`: BigInt
-  - `end_ms`: BigInt
+  - `id`: UUID (Primary Key, deterministically derived via UUID v5 from `timeblock:{start_ms}`)
+  - `start_ms`: BigInt (Unix epoch milliseconds, aligned to epoch boundary)
+  - `end_ms`: BigInt (Unix epoch milliseconds, aligned to epoch boundary)
+  - `duration_ms`: BigInt (Duration in milliseconds, default 180,000)
+  - `activity_type`: String (`"active" | "afk" | "unknown"`)
   - `dominant_app`: String
   - `dominant_title`: String
   - `dominant_url`: String (Nullable)
@@ -46,7 +48,7 @@ A fixed-duration bucket for classification (default 3 minutes). The core unit th
   - `user_override`: String (`"focus" | "neutral" | "drift"`, Nullable)
 
 ### 4. AFKPeriod
-A period of detected inactivity, derived from idle events exceeding a configured threshold (default 5 minutes). During AFK periods, no `TimeBlock`s are generated.
+A period of detected user inactivity, derived from idle events exceeding a configured threshold (default 5 minutes). In Phase 3, during AFK periods, standard epoch intervals are marked with `activity_type = "afk"`. Unobserved gaps exceeding 180s without continuous watcher heartbeats (e.g., system sleep, suspend) are explicitly marked with `activity_type = "unknown"` and are never assumed active.
 
 ### 5. Application
 Metadata about a tracked application. Identified by the process name (`app` field) or `WM_CLASS`. Users can add applications to an exclusion list to prevent tracking.

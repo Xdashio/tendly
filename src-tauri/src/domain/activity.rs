@@ -76,12 +76,64 @@ impl RawEvent {
     }
 }
 
-/// A fixed 3-minute aggregated bucket of user activity.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// The fundamental category of user presence during a time interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityType {
+    Active,
+    Afk,
+    Unknown,
+}
+
+impl ActivityType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ActivityType::Active => "active",
+            ActivityType::Afk => "afk",
+            ActivityType::Unknown => "unknown",
+        }
+    }
+}
+
+impl std::str::FromStr for ActivityType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(ActivityType::Active),
+            "afk" => Ok(ActivityType::Afk),
+            "unknown" => Ok(ActivityType::Unknown),
+            _ => Err(()),
+        }
+    }
+}
+
+/// A contiguous reconstructed run of homogeneous activity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivitySegment {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub app: String,
+    pub title: String,
+    pub activity_type: ActivityType,
+    pub source: RawEventSource,
+    pub event_count: usize,
+}
+
+impl ActivitySegment {
+    pub fn duration_ms(&self) -> i64 {
+        (self.end_ms - self.start_ms).max(0)
+    }
+}
+
+/// A standardized 3-minute aggregated bucket of user activity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimeBlock {
     pub id: String,
     pub start_ms: i64,
     pub end_ms: i64,
+    pub duration_ms: i64,
+    pub activity_type: ActivityType,
     pub dominant_app: String,
     pub dominant_title: String,
     pub dominant_url: Option<String>,
