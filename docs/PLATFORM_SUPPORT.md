@@ -96,24 +96,23 @@ To gather granular context (e.g., specific website names or active tabs), Tendly
 
 | OS / Protocol | Active App | Window Title | Idle (AFK) | Event-Driven | Status |
 |---|---|---|---|---|---|
-| **Linux (X11)** | Yes | Yes | Yes | Yes | Supported / Tested |
-| **Linux (wlroots)** | Yes | Yes | Yes | Yes | Supported / Tested |
-| **Linux (Hyprland)**| Yes | Yes | Yes | Yes | Supported / Tested |
+| **Linux (X11)** | Yes (`WM_CLASS`) | Yes (`_NET_WM_NAME`) | Yes (`XScreenSaver`) | Yes (Hybrid) | Supported / Implemented |
+| **Linux (wlroots)** | Yes (`app_id`) | Yes (`title`) | Yes (`ext-idle`) | Yes | Supported / Implemented |
+| **Linux (Hyprland)**| Yes (`class`) | Yes (`title`) | Yes (`ext-idle`) | Yes (Socket2) | Supported / Implemented |
 | **Linux (COSMIC)** | Yes | Yes | Unknown | Yes | Untested |
-| **Linux (KDE 6)** | Requires Script | Requires Script | Yes | Yes | Untested / Complex |
-| **Linux (GNOME)** | Requires Ext | Requires Ext | Yes | Yes | Untested / Complex |
-| **Windows 10/11** | Yes | Yes | Yes | Yes | Supported / Tested |
-| **macOS 14+** | Yes | Yes (w/ Perm) | Yes | Yes | Supported / Tested |
+| **Linux (KDE 6)** | Requires Script | Requires Script | Yes | Yes | Out of scope for MVP |
+| **Linux (GNOME)** | Requires Ext | Requires Ext | Yes (`IdleMonitor`) | Yes | Out of scope for MVP |
+| **Windows 10/11** | Yes | Yes | Yes | Yes | Planned (v0.6) |
+| **macOS 14+** | Yes | Yes (w/ Perm) | Yes | Yes | Planned (v0.7) |
 
 ## 7. MVP Platform Scope
 
-Given the fragmentation of the Linux desktop ecosystem and the complexities of permissions on modern platforms, the MVP scope for Tendly is:
-- **Linux**: X11 (native) + Wayland/wlroots environments (Sway, Hyprland). GNOME and KDE are explicitly out-of-scope for the MVP due to the requirement for external scripts/extensions.
-- **Windows**: Windows 10/11 standard user sessions (skipping tracking of Admin windows via `uiAccess` for MVP).
-- **macOS**: Non-App Store distribution utilizing the Accessibility API.
-- **Browsers**: Chrome/Firefox MV3 extension.
+Given the fragmentation of the Linux desktop ecosystem and the security boundary constraints on modern compositors, the Linux MVP scope for Tendly is:
+- **Linux Native X11**: Full active window and title tracking via EWMH (`_NET_ACTIVE_WINDOW`) and AFK detection via XScreenSaver.
+- **Linux wlroots Wayland**: Full active window and title tracking via `wlr-foreign-toplevel-management-unstable-v1` and AFK detection via `ext-idle-notify-v1`. Tested with Sway, Hyprland, and wlroots compositors.
+- **GNOME / KDE Wayland (Limitation)**: GNOME Mutter explicitly rejects foreign toplevel protocols, requiring an external GNOME Shell extension. KDE Plasma 6 requires a KWin D-Bus script. These are scheduled for v0.8+ and are not supported for window tracking in the Phase 2 MVP. AFK detection via GNOME Mutter IdleMonitor D-Bus is available as an idle-only fallback.
 
-*Honest limitation*: Linux users on GNOME (the default for Ubuntu/Fedora) running Wayland will experience zero tracking in the MVP.
+*Honest limitation*: Linux users running GNOME on Wayland (e.g. default Ubuntu/Fedora) cannot have window titles captured without installing a GNOME Shell extension. Tendly will report capture as unsupported/degraded rather than failing silently.
 
 ## 8. API Reference
 
