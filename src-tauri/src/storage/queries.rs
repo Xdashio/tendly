@@ -67,3 +67,95 @@ pub fn wipe_all_data(conn: &Connection) -> Result<()> {
     )?;
     Ok(())
 }
+
+pub fn insert_raw_event(conn: &Connection, event: &crate::domain::RawEvent) -> Result<()> {
+    conn.execute(
+        r#"
+        INSERT INTO raw_events (id, source, timestamp_ms, app, title, url, idle_ms, raw_json)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+        rusqlite::params![
+            event.id,
+            event.source.as_str(),
+            event.timestamp_ms,
+            event.app,
+            event.title,
+            event.url,
+            event.idle_ms,
+            event.raw_json,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn insert_raw_events_batch(
+    conn: &mut Connection,
+    events: &[crate::domain::RawEvent],
+) -> Result<()> {
+    if events.is_empty() {
+        return Ok(());
+    }
+
+    let tx = conn.transaction()?;
+    {
+        let mut stmt = tx.prepare(
+            r#"
+            INSERT INTO raw_events (id, source, timestamp_ms, app, title, url, idle_ms, raw_json)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+        )?;
+
+        for event in events {
+            stmt.execute(rusqlite::params![
+                event.id,
+                event.source.as_str(),
+                event.timestamp_ms,
+                event.app,
+                event.title,
+                event.url,
+                event.idle_ms,
+                event.raw_json,
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn get_recent_raw_events(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<crate::domain::RawEvent>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, source, timestamp_ms, app, title, url, idle_ms, raw_json
+        FROM raw_events
+        ORDER BY timestamp_ms DESC
+        LIMIT ?1
+        "#,
+    )?;
+
+    let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+        let source_str: String = row.get(1)?;
+        let source = source_str
+            .parse::<crate::domain::RawEventSource>()
+            .unwrap_or(crate::domain::RawEventSource::X11);
+
+        Ok(crate::domain::RawEvent {
+            id: row.get(0)?,
+            source,
+            timestamp_ms: row.get(2)?,
+            app: row.get(3)?,
+            title: row.get(4)?,
+            url: row.get(5)?,
+            idle_ms: row.get(6)?,
+            raw_json: row.get(7)?,
+        })
+    })?;
+
+    let mut events = Vec::new();
+    for row in rows {
+        events.push(row?);
+    }
+    Ok(events)
+}

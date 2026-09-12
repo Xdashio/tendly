@@ -101,6 +101,30 @@ impl DatabaseManager {
         queries::wipe_all_data(&conn)
     }
 
+    pub fn insert_raw_event(&self, event: &crate::domain::RawEvent) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::insert_raw_event(&conn, event)
+    }
+
+    pub fn insert_raw_events_batch(&self, events: &[crate::domain::RawEvent]) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::insert_raw_events_batch(&mut conn, events)
+    }
+
+    pub fn get_recent_raw_events(&self, limit: usize) -> Result<Vec<crate::domain::RawEvent>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        queries::get_recent_raw_events(&conn, limit)
+    }
+
     pub fn db_path(&self) -> &Path {
         &self.db_path
     }
@@ -138,5 +162,47 @@ mod tests {
         assert_eq!(stats.blocks_count, 0);
 
         db.wipe_all_data().expect("Wipe must succeed");
+    }
+
+    #[test]
+    fn test_raw_events_insert_and_query() {
+        use crate::domain::{RawEvent, RawEventSource};
+
+        let db = DatabaseManager::open_in_memory().expect("Must open in-memory db");
+        let event1 = RawEvent {
+            id: "evt-1".to_string(),
+            source: RawEventSource::X11,
+            timestamp_ms: 1000,
+            app: "code".to_string(),
+            title: "tendly - Visual Studio Code".to_string(),
+            url: None,
+            idle_ms: None,
+            raw_json: None,
+        };
+        let event2 = RawEvent {
+            id: "evt-2".to_string(),
+            source: RawEventSource::Afk,
+            timestamp_ms: 2000,
+            app: "system".to_string(),
+            title: "afk".to_string(),
+            url: None,
+            idle_ms: Some(300000),
+            raw_json: None,
+        };
+
+        db.insert_raw_event(&event1)
+            .expect("Must insert single event");
+        db.insert_raw_events_batch(&[event2])
+            .expect("Must insert batch");
+
+        let stats = db.get_stats().expect("Must get stats");
+        assert_eq!(stats.raw_events_count, 2);
+
+        let recent = db
+            .get_recent_raw_events(10)
+            .expect("Must get recent events");
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "evt-2");
+        assert_eq!(recent[1].id, "evt-1");
     }
 }
