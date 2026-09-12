@@ -127,3 +127,13 @@ pub fn reprocess_time_blocks(state: State<'_, AppState>) -> Result<usize, crate:
     crate::processing::ActivityProcessor::rebuild_all_history(&state.db)
         .map_err(crate::core::IpcError::from)
 }
+
+#[tauri::command]
+pub fn get_block_composition(
+    start_ms: i64,
+    end_ms: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::domain::ActivitySegment>, crate::core::IpcError> {
+    crate::processing::ActivityProcessor::get_block_composition(&state.db, start_ms, end_ms)
+        .map_err(crate::core::IpcError::from)
+}

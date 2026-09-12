@@ -87,6 +87,7 @@ pub fn run() {
             commands::tracking::get_current_activity,
             commands::tracking::get_recent_time_blocks,
             commands::tracking::reprocess_time_blocks,
+            commands::tracking::get_block_composition,
         ])
         .setup(|app| {
             tracing::info!("Tendly application setup completed");

@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 use tempfile::NamedTempFile;
-use tendly_lib::domain::{ActivityType, RawEvent, RawEventSource};
+use tendly_lib::domain::{ActivityType, RawEvent, RawEventSource, TimeBlock};
 use tendly_lib::processing::{
     aggregate_segments_to_blocks, reconstruct_segments, ActivityProcessor,
 };
@@ -503,5 +503,262 @@ fn test_benchmark_synthetic_1_day_dataset() {
         rate > 10_000.0,
         "Throughput below target: {:.0} events/sec",
         rate
+    );
+}
+
+// ---------------------------------------------------------------------------
+// INFORMATION PRESERVATION AND COMPOSITION TESTS (PHASE 3 REVIEW GATE)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_info_01_multiple_apps_in_one_block() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    let e1 = make_event(t0, "code", "main.rs");
+    let e2 = make_event(t0 + 120_000, "firefox", "crates.io");
+    let e3 = make_event(t0 + 180_000, "firefox", "crates.io");
+
+    db.insert_raw_event(&e1).unwrap();
+    db.insert_raw_event(&e2).unwrap();
+    db.insert_raw_event(&e3).unwrap();
+
+    let count = ActivityProcessor::rebuild_all_history(&db).unwrap();
+    assert!(count > 0);
+
+    let blocks = db.get_time_blocks_range(t0, t0 + 180_000).unwrap();
+    assert_eq!(blocks.len(), 1);
+    // Plurality winner for the analytical block is code (120s vs 60s)
+    assert_eq!(blocks[0].dominant_app, "code");
+
+    // Composition on demand preserves both apps losslessly
+    let composition = ActivityProcessor::get_block_composition(&db, t0, t0 + 180_000).unwrap();
+    assert_eq!(composition.len(), 2);
+    assert_eq!(composition[0].app, "code");
+    assert_eq!(composition[0].duration_ms(), 120_000);
+    assert_eq!(composition[1].app, "firefox");
+    assert_eq!(composition[1].duration_ms(), 60_000);
+}
+
+#[test]
+fn test_info_02_multiple_titles_in_one_app() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    let e1 = make_event(t0, "code", "main.rs");
+    let e2 = make_event(t0 + 100_000, "code", "lib.rs");
+    let e3 = make_event(t0 + 180_000, "code", "lib.rs");
+
+    db.insert_raw_event(&e1).unwrap();
+    db.insert_raw_event(&e2).unwrap();
+    db.insert_raw_event(&e3).unwrap();
+
+    ActivityProcessor::rebuild_all_history(&db).unwrap();
+
+    let blocks = db.get_time_blocks_range(t0, t0 + 180_000).unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].dominant_app, "code");
+    assert_eq!(blocks[0].dominant_title, "main.rs"); // 100s vs 80s
+
+    let composition = ActivityProcessor::get_block_composition(&db, t0, t0 + 180_000).unwrap();
+    assert_eq!(composition.len(), 2);
+    assert_eq!(composition[0].title, "main.rs");
+    assert_eq!(composition[0].duration_ms(), 100_000);
+    assert_eq!(composition[1].title, "lib.rs");
+    assert_eq!(composition[1].duration_ms(), 60_000);
+}
+
+#[test]
+fn test_info_03_short_secondary_activities() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    // 155s VS Code, 25s Firefox
+    let e1 = make_event(t0, "code", "editor");
+    let e2 = make_event(t0 + 155_000, "firefox", "quick docs");
+    let e3 = make_event(t0 + 180_000, "code", "editor");
+
+    db.insert_raw_event(&e1).unwrap();
+    db.insert_raw_event(&e2).unwrap();
+    db.insert_raw_event(&e3).unwrap();
+
+    ActivityProcessor::rebuild_all_history(&db).unwrap();
+
+    let blocks = db.get_time_blocks_range(t0, t0 + 180_000).unwrap();
+    assert_eq!(blocks[0].dominant_app, "code");
+
+    let composition = ActivityProcessor::get_block_composition(&db, t0, t0 + 180_000).unwrap();
+    let firefox_seg = composition.iter().find(|s| s.app == "firefox").unwrap();
+    assert_eq!(firefox_seg.duration_ms(), 25_000);
+}
+
+#[test]
+fn test_info_04_activity_spanning_epoch_boundary() {
+    let t0 = 1_800_000;
+    // Activity starts 1m before epoch boundary and runs 1m after
+    let events = vec![
+        make_event(t0 + 120_000, "code", "feature.rs"),
+        make_event(t0 + 240_000, "terminal", "bash"),
+    ];
+
+    let segments = reconstruct_segments(&events);
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].app, "code");
+    assert_eq!(segments[0].duration_ms(), 120_000);
+
+    let blocks = aggregate_segments_to_blocks(&segments);
+    assert_eq!(blocks.len(), 2);
+    // Spanning segment cleanly splits across epoch boundary without losing duration
+    assert_eq!(blocks[0].start_ms, t0);
+    assert_eq!(blocks[1].start_ms, t0 + 180_000);
+}
+
+#[test]
+fn test_info_05_long_uninterrupted_activity() {
+    let t0 = 1_800_000;
+    // 1 hour continuous coding with 60s checkpoints
+    let mut events = Vec::new();
+    for i in 0..60 {
+        events.push(make_event(t0 + i * 60_000, "code", "deep work"));
+    }
+
+    let segments = reconstruct_segments(&events);
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].duration_ms(), 3_600_000);
+
+    let blocks = aggregate_segments_to_blocks(&segments);
+    assert_eq!(blocks.len(), 20); // 60 mins / 3 mins = 20 blocks
+    for block in &blocks {
+        assert_eq!(block.dominant_app, "code");
+        assert_eq!(block.duration_ms, 180_000);
+    }
+}
+
+#[test]
+fn test_info_06_afk_mixed_with_active() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    // 120s active coding, 60s AFK
+    let e1 = make_event(t0, "code", "editor");
+    let e2 = make_afk_event(t0 + 120_000, "afk");
+    let e3 = make_afk_event(t0 + 180_000, "afk");
+
+    db.insert_raw_event(&e1).unwrap();
+    db.insert_raw_event(&e2).unwrap();
+    db.insert_raw_event(&e3).unwrap();
+
+    ActivityProcessor::rebuild_all_history(&db).unwrap();
+
+    let blocks = db.get_time_blocks_range(t0, t0 + 180_000).unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].dominant_app, "code");
+    assert_eq!(blocks[0].activity_type, ActivityType::Active);
+
+    let comp = ActivityProcessor::get_block_composition(&db, t0, t0 + 180_000).unwrap();
+    assert_eq!(comp.len(), 2);
+    assert_eq!(comp[0].activity_type, ActivityType::Active);
+    assert_eq!(comp[1].activity_type, ActivityType::Afk);
+}
+
+#[test]
+fn test_info_07_unknown_mixed_with_active() {
+    let t0 = 1_800_000;
+    // 30s active, then 2 hours sleep
+    let events = vec![
+        make_event(t0, "code", "editor"),
+        make_event(t0 + 7_200_000, "code", "wake"),
+    ];
+
+    let segments = reconstruct_segments(&events);
+    assert_eq!(segments[0].app, "code");
+    assert_eq!(segments[0].duration_ms(), 60_000); // 60s grace
+    assert_eq!(segments[1].activity_type, ActivityType::Unknown);
+
+    let blocks = aggregate_segments_to_blocks(&segments);
+    // In first block: 60s active, 120s unknown -> unknown is plurality
+    assert_eq!(blocks[0].activity_type, ActivityType::Unknown);
+}
+
+#[test]
+fn test_info_08_reprocessing_after_raw_activity_changes() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    let e1 = make_event(t0, "code", "editor");
+    db.insert_raw_event(&e1).unwrap();
+
+    ActivityProcessor::rebuild_all_history(&db).unwrap();
+    let b1 = &db.get_time_blocks_range(t0, t0 + 180_000).unwrap()[0];
+    assert_eq!(b1.dominant_app, "code");
+
+    // Later backfill or sync adds higher duration of browser
+    let e2 = make_event(t0 + 10_000, "firefox", "research");
+    let e3 = make_event(t0 + 180_000, "firefox", "research");
+    db.insert_raw_event(&e2).unwrap();
+    db.insert_raw_event(&e3).unwrap();
+
+    ActivityProcessor::rebuild_all_history(&db).unwrap();
+    let b2 = &db.get_time_blocks_range(t0, t0 + 180_000).unwrap()[0];
+    assert_eq!(b2.dominant_app, "firefox");
+}
+
+#[test]
+fn test_info_09_classification_staleness_invalidation() {
+    let (_tmp, db) = create_test_db();
+    let t0 = 1_800_000;
+
+    let mut b = TimeBlock {
+        id: "block-test-stale".to_string(),
+        start_ms: t0,
+        end_ms: t0 + 180_000,
+        duration_ms: 180_000,
+        activity_type: ActivityType::Active,
+        dominant_app: "code".to_string(),
+        dominant_title: "main.rs".to_string(),
+        dominant_url: None,
+        classification: Some(tendly_lib::domain::Classification::Focus),
+        category: Some("Development".to_string()),
+        confidence: Some(0.95),
+        classified_by: Some("tier1_rule".to_string()),
+        user_override: Some(tendly_lib::domain::Classification::Focus),
+    };
+
+    db.insert_time_block(&b).unwrap();
+
+    // 1. Reprocess where content is identical: classification is preserved
+    db.insert_time_block(&b).unwrap();
+    let fetched = &db.get_time_blocks_range(t0, t0 + 180_000).unwrap()[0];
+    assert_eq!(
+        fetched.classification,
+        Some(tendly_lib::domain::Classification::Focus)
+    );
+    assert_eq!(
+        fetched.user_override,
+        Some(tendly_lib::domain::Classification::Focus)
+    );
+
+    // 2. Reprocess where dominant app changed from code to slack:
+    // Automatic classification MUST be invalidated (reset to None)!
+    // User override on 'code' must not leak onto 'slack'!
+    b.dominant_app = "slack".to_string();
+    b.dominant_title = "general".to_string();
+    b.classification = None;
+    b.category = None;
+    b.confidence = None;
+    b.classified_by = None;
+    b.user_override = None;
+
+    db.insert_time_block(&b).unwrap();
+    let updated = &db.get_time_blocks_range(t0, t0 + 180_000).unwrap()[0];
+    assert_eq!(updated.dominant_app, "slack");
+    assert_eq!(
+        updated.classification, None,
+        "Automatic classification must be invalidated when app changes"
+    );
+    assert_eq!(updated.category, None);
+    assert_eq!(
+        updated.user_override, None,
+        "User override must be invalidated when app changes"
     );
 }

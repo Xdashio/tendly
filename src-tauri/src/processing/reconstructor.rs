@@ -75,9 +75,12 @@ impl ActivityProcessor {
             ActivityType::Active
         };
 
-        // Fetch recent timeblock if any exists
+        // Fetch recent timeblock if it encloses the current instant
         let recent_blocks = db.get_recent_time_blocks(1)?;
-        let current_block = recent_blocks.into_iter().next();
+        let current_block = recent_blocks
+            .into_iter()
+            .next()
+            .filter(|b| now_ms >= b.start_ms && now_ms < b.end_ms);
 
         Ok(Some(CurrentActivityState {
             active_app: latest.app.clone(),
@@ -86,5 +89,41 @@ impl ActivityProcessor {
             current_block,
             elapsed_in_state_seconds: elapsed,
         }))
+    }
+
+    /// Derives the exact contiguous activity segment composition of an interval on demand from raw events.
+    pub fn get_block_composition(
+        db: &DatabaseManager,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> Result<Vec<crate::domain::ActivitySegment>> {
+        let events = db.get_raw_events_range(start_ms, end_ms)?;
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let segments = reconstruct_segments(&events);
+        let mut composition = Vec::new();
+
+        for seg in segments {
+            if seg.end_ms <= start_ms || seg.start_ms >= end_ms {
+                continue;
+            }
+            let overlap_start = seg.start_ms.max(start_ms);
+            let overlap_end = seg.end_ms.min(end_ms);
+            if overlap_end > overlap_start {
+                composition.push(crate::domain::ActivitySegment {
+                    start_ms: overlap_start,
+                    end_ms: overlap_end,
+                    app: seg.app,
+                    title: seg.title,
+                    activity_type: seg.activity_type,
+                    source: seg.source,
+                    event_count: seg.event_count,
+                });
+            }
+        }
+
+        Ok(composition)
     }
 }

@@ -169,7 +169,7 @@ pub fn get_raw_events_range(
         r#"
         SELECT id, source, timestamp_ms, app, title, url, idle_ms, raw_json
         FROM raw_events
-        WHERE timestamp_ms >= ?1 AND timestamp_ms <= ?2
+        WHERE timestamp_ms >= ?1 AND timestamp_ms < ?2
         ORDER BY timestamp_ms ASC, id ASC
         "#,
     )?;
@@ -230,11 +230,26 @@ pub fn insert_time_block(conn: &Connection, block: &crate::domain::TimeBlock) ->
             dominant_app = excluded.dominant_app,
             dominant_title = excluded.dominant_title,
             dominant_url = excluded.dominant_url,
-            classification = COALESCE(blocks.classification, excluded.classification),
-            category = COALESCE(blocks.category, excluded.category),
-            confidence = COALESCE(blocks.confidence, excluded.confidence),
-            classified_by = COALESCE(blocks.classified_by, excluded.classified_by),
-            user_override = COALESCE(blocks.user_override, excluded.user_override)
+            classification = CASE
+                WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.classification, excluded.classification)
+                ELSE excluded.classification
+            END,
+            category = CASE
+                WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.category, excluded.category)
+                ELSE excluded.category
+            END,
+            confidence = CASE
+                WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.confidence, excluded.confidence)
+                ELSE excluded.confidence
+            END,
+            classified_by = CASE
+                WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.classified_by, excluded.classified_by)
+                ELSE excluded.classified_by
+            END,
+            user_override = CASE
+                WHEN blocks.dominant_app = excluded.dominant_app THEN COALESCE(blocks.user_override, excluded.user_override)
+                ELSE excluded.user_override
+            END
         "#,
         rusqlite::params![
             block.id,
@@ -279,11 +294,26 @@ pub fn insert_time_blocks_batch(
                 dominant_app = excluded.dominant_app,
                 dominant_title = excluded.dominant_title,
                 dominant_url = excluded.dominant_url,
-                classification = COALESCE(blocks.classification, excluded.classification),
-                category = COALESCE(blocks.category, excluded.category),
-                confidence = COALESCE(blocks.confidence, excluded.confidence),
-                classified_by = COALESCE(blocks.classified_by, excluded.classified_by),
-                user_override = COALESCE(blocks.user_override, excluded.user_override)
+                classification = CASE
+                    WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.classification, excluded.classification)
+                    ELSE excluded.classification
+                END,
+                category = CASE
+                    WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.category, excluded.category)
+                    ELSE excluded.category
+                END,
+                confidence = CASE
+                    WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.confidence, excluded.confidence)
+                    ELSE excluded.confidence
+                END,
+                classified_by = CASE
+                    WHEN blocks.dominant_app = excluded.dominant_app AND blocks.dominant_title = excluded.dominant_title AND blocks.activity_type = excluded.activity_type THEN COALESCE(blocks.classified_by, excluded.classified_by)
+                    ELSE excluded.classified_by
+                END,
+                user_override = CASE
+                    WHEN blocks.dominant_app = excluded.dominant_app THEN COALESCE(blocks.user_override, excluded.user_override)
+                    ELSE excluded.user_override
+                END
             "#,
         )?;
 
@@ -319,7 +349,7 @@ pub fn get_time_blocks_range(
         SELECT id, start_ms, end_ms, duration_ms, activity_type, dominant_app, dominant_title,
                dominant_url, classification, category, confidence, classified_by, user_override
         FROM blocks
-        WHERE start_ms >= ?1 AND start_ms <= ?2
+        WHERE start_ms >= ?1 AND start_ms < ?2
         ORDER BY start_ms ASC
         "#,
     )?;
