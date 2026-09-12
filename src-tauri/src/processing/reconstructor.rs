@@ -123,6 +123,7 @@ impl ActivityProcessor {
                     activity_type: seg.activity_type,
                     source: seg.source,
                     event_count: seg.event_count,
+                    browser_context: seg.browser_context,
                 });
             }
         }

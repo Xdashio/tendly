@@ -650,3 +650,45 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 
 **Reversibility:** High. Coalescing logic is entirely in-memory in the presentation layer and does not alter the underlying SQLite schema.
 
+---
+
+### ADR-024: Browser Context Acquisition, Title Parsing, and Enrichment Pipeline
+
+**Date:** 2026-09-13
+**Status:** Accepted
+
+**Context:** In Phase 5, Tendly needs to enrich browser activity observations with browser-specific context (browser application identity, page title, URL/domain) without violating Tendly's privacy-first, local-first principles and without destabilizing the analytical 3-minute TimeBlock pipeline.
+
+**Problem:**
+1. Determining the most appropriate, reliable, and non-invasive mechanism for capturing browser context on Linux desktop environments.
+2. Avoiding invasive browser extensions or native messaging hosts in the initial context capture release.
+3. Preserving the single-source-of-truth invariant (no separate browser database or parallel history store).
+4. Ensuring complete failure isolation: failure to extract browser context must never disrupt primary activity capture.
+
+**Options Considered:**
+1. Browser Extension + Native Messaging: Captures full URLs and tab IDs via WebExtension APIs, but requires per-browser user installation, permissions, native messaging binary manifests, and high maintenance overhead.
+2. Accessibility / AT-SPI: Reads address bar text via AT-SPI D-Bus interfaces, but is fragile, sluggish, and often disabled by default in modern desktop distributions.
+3. Chrome DevTools Protocol (CDP) / Remote Debugging: Requires launching browsers with specialized debugging flags; unacceptable security risk.
+4. Window Title Parsing: Extracts the page title and browser identity directly from the OS window manager titles (`_NET_WM_NAME` on X11, Hyprland/Wayland socket IPC) that Tendly's watchers already capture.
+
+**Decision:**
+1. **Acquisition Mechanism:** Adopt Window Title Parsing as the primary browser context mechanism. Tendly identifies the active browser via window class (`WM_CLASS` / Hyprland class) and strips standard browser decoration suffixes (e.g., ` — Mozilla Firefox`, ` - Google Chrome`) to extract clean page titles.
+2. **Deterministic Enrichment Layer:** `enrich_browser_context(app, title)` executes synchronously in the capture watcher loop and enriches `RawEvent` with structured metadata stored in `raw_json`.
+3. **Single Source of Truth:** No secondary database tables or history caches are introduced. Existing columns `raw_events.raw_json` and `blocks.dominant_url` accommodate the enrichment without schema migrations.
+4. **Context Switch Fidelity:** Because segment reconstruction keys on `(app, title)`, navigating between tabs or pages within the same browser naturally generates distinct `ActivitySegment`s.
+5. **URL Normalization Rules:** Implemented deterministic URL normalization (WHATWG parser, port stripping, credential stripping, and removal of `utm_*`, `fbclid`, `gclid` tracking parameters) in preparation for future extension feeds.
+6. **Graceful Degradation:** If title parsing does not recognize a pattern or encounters an atypical window title, the full window title is preserved and tracking continues unaffected.
+
+**Rationale:**
+- Zero user setup or extension installation required.
+- Zero external dependencies or invasive permissions.
+- Rock-solid stability: cannot crash or freeze the user's browser.
+- Respects privacy: no local browsing history harvesting.
+
+**Consequences:**
+- Users immediately see clean page titles and domain context in their activity timeline.
+- The pipeline architecture is forward-compatible with future browser extension feeds (via `RawEventSource::Browser` and `BrowserContext`).
+- Full URLs with query parameters remain unavailable for window-title-captured events (a documented Phase 5 trade-off).
+
+**Reversibility:** High. Enrichment logic is isolated to the capture and reconstruction layer and does not alter database schema invariants.
+

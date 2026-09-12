@@ -1,4 +1,5 @@
 pub mod afk;
+pub mod browser_context;
 pub mod manager;
 pub mod pipeline;
 pub mod watcher;

@@ -319,4 +319,60 @@ describe('Timeline Component', () => {
 
     expect(nextBtn.hasAttribute('disabled')).toBe(true);
   });
+
+  it('renders browser context page_title and domain in drill-down segments when present', async () => {
+    const session = {
+      id: 'session:browser_drill',
+      start_ms: 1700032800000,
+      end_ms: 1700036400000,
+      duration_ms: 3600000,
+      dominant_app: 'firefox',
+      dominant_title: 'GitHub - tendly/tendly: Pull Request #5 — Mozilla Firefox',
+      activity_type: 'active' as const,
+      block_count: 12,
+      time_blocks: [],
+      has_secondary_activity: false,
+      secondary_apps: [],
+    };
+
+    vi.mocked(api.getDailyTimeline).mockResolvedValueOnce({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [session],
+      total_active_ms: 3600000,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 12,
+    });
+
+    vi.mocked(api.getSessionDetails).mockResolvedValueOnce({
+      session,
+      segments: [
+        {
+          start_ms: 1700032800000,
+          end_ms: 1700036400000,
+          app: 'firefox',
+          title: 'GitHub - tendly/tendly: Pull Request #5 — Mozilla Firefox',
+          activity_type: 'active',
+          source: 'x11',
+          event_count: 45,
+          browser_context: {
+            browser: 'firefox',
+            page_title: 'GitHub - tendly/tendly: Pull Request #5',
+            url: null,
+            domain: 'github.com',
+          },
+        },
+      ],
+      app_breakdown: [{ app: 'firefox', duration_ms: 3600000 }],
+    });
+
+    const { findByText } = render(Timeline, { currentActivity: null });
+    const inspectBtn = await findByText('Inspect [+]');
+    await fireEvent.click(inspectBtn);
+
+    // Verify extracted page title and domain badge are rendered
+    expect(await findByText('GitHub - tendly/tendly: Pull Request #5')).toBeTruthy();
+    expect(await findByText('github.com')).toBeTruthy();
+  });
 });

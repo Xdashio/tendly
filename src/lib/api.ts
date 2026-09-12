@@ -69,6 +69,13 @@ export interface AppDurationSummary {
   duration_ms: number;
 }
 
+export interface BrowserContext {
+  browser: string;
+  page_title: string | null;
+  url: string | null;
+  domain: string | null;
+}
+
 export interface ActivitySegment {
   start_ms: number;
   end_ms: number;
@@ -77,6 +84,7 @@ export interface ActivitySegment {
   activity_type: ActivityType;
   source: string;
   event_count: number;
+  browser_context?: BrowserContext | null;
 }
 
 export interface ActivitySession {
@@ -310,10 +318,16 @@ export async function getSessionDetails(
           start_ms: startMs + 40 * 60 * 1000,
           end_ms: startMs + 43 * 60 * 1000,
           app: 'firefox',
-          title: 'Svelte 5 Runes Documentation',
+          title: 'Svelte 5 Runes Documentation — Mozilla Firefox',
           activity_type: 'active',
           source: 'x11',
           event_count: 12,
+          browser_context: {
+            browser: 'firefox',
+            page_title: 'Svelte 5 Runes Documentation',
+            url: null,
+            domain: null,
+          },
         },
         {
           start_ms: startMs + 43 * 60 * 1000,

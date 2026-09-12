@@ -239,6 +239,12 @@ fn run_x11_watcher_loop(
 
                     if (state_changed || checkpoint_due) && (!app.is_empty() || !title.is_empty()) {
                         let now_ms = chrono::Utc::now().timestamp_millis();
+
+                        // Enrich with browser context if this is a known browser
+                        let raw_json =
+                            crate::capture::browser_context::enrich_browser_context(&app, &title)
+                                .and_then(|ctx| serde_json::to_string(&ctx).ok());
+
                         let event = RawEvent {
                             id: uuid::Uuid::new_v4().to_string(),
                             source: RawEventSource::X11,
@@ -247,7 +253,7 @@ fn run_x11_watcher_loop(
                             title: title.clone(),
                             url: None,
                             idle_ms: None,
-                            raw_json: None,
+                            raw_json,
                         };
 
                         if let Err(e) = tx.blocking_send(event) {

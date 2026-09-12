@@ -44,6 +44,26 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
         let is_active_resume_event =
             current.source == RawEventSource::Afk && current.title.to_lowercase() == "active";
 
+        let mut browser_context = current
+            .raw_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<crate::domain::BrowserContext>(json).ok())
+            .or_else(|| {
+                crate::capture::browser_context::enrich_browser_context(
+                    &current.app,
+                    &current.title,
+                )
+            });
+
+        if let (Some(url), Some(ctx)) = (&current.url, &mut browser_context) {
+            if ctx.url.is_none() {
+                ctx.url = crate::capture::browser_context::normalize_url(url);
+            }
+            if ctx.domain.is_none() {
+                ctx.domain = crate::capture::browser_context::extract_domain(url);
+            }
+        }
+
         match next {
             Some(next_event) => {
                 let next_ts = next_event.timestamp_ms;
@@ -59,6 +79,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                         activity_type: ActivityType::Afk,
                         source: RawEventSource::Afk,
                         event_count: 1,
+                        browser_context: None,
                     });
                 } else if is_active_resume_event {
                     // Marker event that user returned: minimal 0-length bridge or up to next event
@@ -71,6 +92,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             activity_type: ActivityType::Active,
                             source: RawEventSource::Afk,
                             event_count: 1,
+                            browser_context: None,
                         });
                     }
                 } else {
@@ -85,6 +107,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             activity_type: ActivityType::Active,
                             source: current.source,
                             event_count: 1,
+                            browser_context: browser_context.clone(),
                         });
                     } else {
                         // Gap exceeded: cap active observation at HEARTBEAT_GRACE_MS
@@ -97,6 +120,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             activity_type: ActivityType::Active,
                             source: current.source,
                             event_count: 1,
+                            browser_context: browser_context.clone(),
                         });
 
                         // Remaining elapsed time is Unknown
@@ -108,6 +132,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             activity_type: ActivityType::Unknown,
                             source: current.source,
                             event_count: 0,
+                            browser_context: None,
                         });
                     }
                 }
@@ -130,6 +155,12 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                     ActivityType::Active
                 };
 
+                let final_ctx = if is_afk_event {
+                    None
+                } else {
+                    browser_context.clone()
+                };
+
                 raw_segments.push(ActivitySegment {
                     start_ms,
                     end_ms,
@@ -138,6 +169,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                     activity_type,
                     source: current.source,
                     event_count: 1,
+                    browser_context: final_ctx,
                 });
             }
         }
@@ -164,8 +196,9 @@ fn coalesce_segments(segments: Vec<ActivitySegment>) -> Vec<ActivitySegment> {
             let same_app = last.app == seg.app;
             let same_title = last.title == seg.title;
             let same_type = last.activity_type == seg.activity_type;
+            let same_ctx = last.browser_context == seg.browser_context;
 
-            if contiguous && same_app && same_title && same_type {
+            if contiguous && same_app && same_title && same_type && same_ctx {
                 last.end_ms = seg.end_ms;
                 last.event_count += seg.event_count;
                 continue;

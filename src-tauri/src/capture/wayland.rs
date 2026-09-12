@@ -224,6 +224,13 @@ fn run_hyprland_socket_loop(
                             && (!app.is_empty() || !title.is_empty())
                         {
                             let now_ms = chrono::Utc::now().timestamp_millis();
+
+                            // Enrich with browser context if this is a known browser
+                            let raw_json = crate::capture::browser_context::enrich_browser_context(
+                                &app, &title,
+                            )
+                            .and_then(|ctx| serde_json::to_string(&ctx).ok());
+
                             let event = RawEvent {
                                 id: uuid::Uuid::new_v4().to_string(),
                                 source: RawEventSource::Wayland,
@@ -232,7 +239,7 @@ fn run_hyprland_socket_loop(
                                 title: title.clone(),
                                 url: None,
                                 idle_ms: None,
-                                raw_json: None,
+                                raw_json,
                             };
 
                             let _ = tx.blocking_send(event);
@@ -249,6 +256,12 @@ fn run_hyprland_socket_loop(
                     // Checkpoint check on read timeout
                     if !last_app.is_empty() && last_emit.elapsed() >= Duration::from_secs(60) {
                         let now_ms = chrono::Utc::now().timestamp_millis();
+                        let raw_json = crate::capture::browser_context::enrich_browser_context(
+                            &last_app,
+                            &last_title,
+                        )
+                        .and_then(|ctx| serde_json::to_string(&ctx).ok());
+
                         let event = RawEvent {
                             id: uuid::Uuid::new_v4().to_string(),
                             source: RawEventSource::Wayland,
@@ -257,7 +270,7 @@ fn run_hyprland_socket_loop(
                             title: last_title.clone(),
                             url: None,
                             idle_ms: None,
-                            raw_json: None,
+                            raw_json,
                         };
                         let _ = tx.blocking_send(event);
                         last_emit = Instant::now();

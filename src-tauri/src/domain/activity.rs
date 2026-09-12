@@ -118,6 +118,8 @@ pub struct ActivitySegment {
     pub activity_type: ActivityType,
     pub source: RawEventSource,
     pub event_count: usize,
+    #[serde(default)]
+    pub browser_context: Option<crate::domain::BrowserContext>,
 }
 
 impl ActivitySegment {

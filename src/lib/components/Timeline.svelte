@@ -366,7 +366,14 @@
                           <div class="px-3 py-2 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 hover:bg-neutral-800/20 text-[11px]">
                             <div class="flex items-center gap-2 truncate flex-1 min-w-0">
                               <span class="font-semibold text-neutral-300 shrink-0">{seg.app}</span>
-                              <span class="text-neutral-400 truncate">{seg.title}</span>
+                              {#if seg.browser_context?.page_title}
+                                <span class="text-neutral-200 font-medium truncate">{seg.browser_context.page_title}</span>
+                                {#if seg.browser_context.domain}
+                                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 shrink-0">{seg.browser_context.domain}</span>
+                                {/if}
+                              {:else}
+                                <span class="text-neutral-400 truncate">{seg.title}</span>
+                              {/if}
                             </div>
                             <div class="flex items-center gap-3 text-neutral-500 shrink-0">
                               <span>{formatTime(seg.start_ms)} - {formatTime(seg.end_ms)}</span>

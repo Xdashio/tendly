@@ -97,6 +97,24 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
             )
             .to_string();
 
+            let dominant_url = if activity_type == ActivityType::Active {
+                segments
+                    .iter()
+                    .filter(|s| {
+                        s.app == dominant_app
+                            && s.title == dominant_title
+                            && s.start_ms < epoch_end
+                            && s.end_ms > epoch_start
+                    })
+                    .find_map(|s| {
+                        s.browser_context
+                            .as_ref()
+                            .and_then(|ctx| ctx.url.clone().or_else(|| ctx.domain.clone()))
+                    })
+            } else {
+                None
+            };
+
             blocks.push(TimeBlock {
                 id: block_id,
                 start_ms: epoch_start,
@@ -105,7 +123,7 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
                 activity_type,
                 dominant_app,
                 dominant_title,
-                dominant_url: None,
+                dominant_url,
                 classification: None,
                 category: None,
                 confidence: None,
@@ -123,7 +141,7 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::RawEventSource;
+    use crate::domain::{BrowserContext, BrowserType, RawEventSource};
 
     #[test]
     fn test_single_active_segment_aggregation() {
@@ -135,6 +153,7 @@ mod tests {
             activity_type: ActivityType::Active,
             source: RawEventSource::X11,
             event_count: 3,
+            browser_context: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[segment]);
@@ -144,6 +163,7 @@ mod tests {
         assert_eq!(blocks[0].dominant_app, "code");
         assert_eq!(blocks[0].dominant_title, "main.rs");
         assert_eq!(blocks[0].activity_type, ActivityType::Active);
+        assert_eq!(blocks[0].dominant_url, None);
     }
 
     #[test]
@@ -158,6 +178,7 @@ mod tests {
             activity_type: ActivityType::Active,
             source: RawEventSource::X11,
             event_count: 1,
+            browser_context: None,
         };
         let seg2 = ActivitySegment {
             start_ms: 50_000,
@@ -167,6 +188,7 @@ mod tests {
             activity_type: ActivityType::Active,
             source: RawEventSource::X11,
             event_count: 2,
+            browser_context: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[seg1, seg2]);
@@ -186,6 +208,7 @@ mod tests {
             activity_type: ActivityType::Afk,
             source: RawEventSource::Afk,
             event_count: 1,
+            browser_context: None,
         };
         let seg_code = ActivitySegment {
             start_ms: 140_000,
@@ -195,6 +218,7 @@ mod tests {
             activity_type: ActivityType::Active,
             source: RawEventSource::X11,
             event_count: 1,
+            browser_context: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[seg_afk, seg_code]);
@@ -202,5 +226,32 @@ mod tests {
         assert_eq!(blocks[0].activity_type, ActivityType::Afk);
         assert_eq!(blocks[0].dominant_app, "system");
         assert_eq!(blocks[0].dominant_title, "afk");
+    }
+
+    #[test]
+    fn test_browser_dominant_block_with_url_context() {
+        let browser_seg = ActivitySegment {
+            start_ms: 0,
+            end_ms: 180_000,
+            app: "firefox".to_string(),
+            title: "GitHub - tendly \u{2014} Mozilla Firefox".to_string(),
+            activity_type: ActivityType::Active,
+            source: RawEventSource::X11,
+            event_count: 2,
+            browser_context: Some(BrowserContext {
+                browser: BrowserType::Firefox,
+                page_title: Some("GitHub - tendly".to_string()),
+                url: Some("https://github.com/xdashio/tendly".to_string()),
+                domain: Some("github.com".to_string()),
+            }),
+        };
+
+        let blocks = aggregate_segments_to_blocks(&[browser_seg]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].dominant_app, "firefox");
+        assert_eq!(
+            blocks[0].dominant_url,
+            Some("https://github.com/xdashio/tendly".to_string())
+        );
     }
 }
