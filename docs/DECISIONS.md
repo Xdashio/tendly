@@ -507,3 +507,66 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 - Time continuity is preserved for downstream time-block aggregation.
 
 **Reversibility:** High. Deduplication parameters are configurable in `DeduplicationFilter`.
+
+---
+
+### ADR-020: Model C Hybrid Segment-First Epoch Bucketing for Time-Block Aggregation
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context:** Phase 3 requires converting raw OS observations (`RawEvent`) into meaningful, non-overlapping `TimeBlock` records for user review and downstream AI classification.
+
+**Problem:** How to group heterogeneous, non-uniform window focus durations and AFK periods into time blocks without producing fragmented micro-blocks or artificial, oversized blocks.
+
+**Options Considered:**
+1. Model A: Pure fixed-time epoch buckets (rigid 3-minute windows into which raw events are sliced). Simple, but fragments continuous flow when an activity spans across bucket boundaries.
+2. Model B: Variable-length activity segments (every window switch starts a new block). Preserves exact switch boundaries, but produces noisy micro-blocks (e.g. 4 seconds) and massive multi-hour blocks that defy uniform AI classification.
+3. Model C: Hybrid segment-first epoch bucketing. Reconstructs contiguous homogeneous `ActivitySegment`s first, then maps segments into standardized 3-minute epoch intervals (`[T, T + 180s)`) with plurality attribution.
+
+**Decision:** Adopt Model C (Hybrid Segment-First Epoch Bucketing).
+
+**Rationale:**
+- Preserves accurate contiguous session context across switches.
+- Produces clean, uniform 3-minute blocks (`TimeBlock`) essential for consistent downstream AI classification and regular UI timelines.
+- Attributes block metadata using plurality of active duration within the epoch interval.
+
+**Consequences:**
+- Timeline visualization is regular and deterministic.
+- Small sub-minute switches during a long coding session do not pollute the primary classification of the block.
+- Downstream classification in Phase 4 operates on predictable 3-minute units.
+
+**Reversibility:** Moderate. Bucketing duration (180s) and aggregation algorithms are isolated in the `processing` module.
+
+---
+
+### ADR-021: Canonical Raw Event Authority, Unknown Gap Handling, and Idempotent Rebuilding
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context:** Time-block derivation algorithms may evolve over time (e.g., improved heuristics or refined threshold values). The system must allow recalculation of historical blocks without data loss or duplication. In addition, system sleep, suspend, or crashes can create unobserved time gaps.
+
+**Problem:** Establishing data ownership, preventing misclassification of unknown gaps as active work or AFK, and ensuring idempotent reprocessing of historical records.
+
+**Options Considered:**
+1. Store only derived `TimeBlock`s and discard `RawEvent`s - Destroys the ability to re-aggregate or improve classification retrospectively.
+2. Assume unobserved time gaps are active work or AFK - False assumption; an unobserved gap during laptop sleep is neither active keyboard work nor normal desk idle.
+3. Establish `RawEvent` as the canonical source of truth, classify unobserved gaps > 180s as `ActivityType::Unknown`, and generate deterministic UUID v5 IDs for idempotent replacement.
+
+**Decision:**
+1. `RawEvent` is the immutable, canonical source of truth. `TimeBlock`s are purely derived.
+2. Unobserved time gaps greater than 180s without watcher heartbeats are capped after a 60-second grace period and explicitly typed as `ActivityType::Unknown`. Unknown time is never converted to active work.
+3. Each `TimeBlock` ID is deterministically generated via UUID v5 derived from its start timestamp (`timeblock:{start_ms}`). SQLite enforces `UNIQUE(start_ms)` with `ON CONFLICT(start_ms) DO UPDATE`.
+
+**Rationale:**
+- Complete auditability and future-proofing: Users can reprocess their entire history whenever aggregation rules or AI models are updated.
+- Truthfulness: Tendly never fabricates user activity during system sleep or suspend.
+- Idempotency: Reprocessing identical raw events 100 times produces identical blocks with zero duplicates.
+
+**Consequences:**
+- Historical reprocessing is instantaneous, safe, and repeatable.
+- Sleep/suspend periods are accurately recognized as unobserved time.
+- Storage requirement for `raw_events` remains lightweight (< 500 KB per week).
+
+**Reversibility:** Very Difficult. Reversing raw event immutability would compromise data integrity.
