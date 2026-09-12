@@ -604,3 +604,49 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 - Downstream classification (Phase 6/7) and timeline rendering (Phase 4) can inspect full sub-minute fidelity on demand.
 
 **Reversibility:** Moderate. Can add cached composition if profiling indicates query overhead in future phases.
+
+---
+
+### ADR-023: User-Facing Activity Sessions, Deterministic Coalescing, and Timeline Presentation
+
+**Date:** 2026-09-12
+**Status:** Accepted
+
+**Context:** In Phase 4, Tendly needs to present activity history to the user as meaningful, continuous activity sessions (e.g. "VS Code 45m") rather than a fragmented stream of sixteen identical 3-minute blocks. At the same time, the 3-minute TimeBlock architecture must remain the authoritative analytical unit for future AI/rules classification, and users must be able to inspect sub-minute secondary activity.
+
+**Problem:**
+1. Directly presenting 3-minute TimeBlocks in the UI produces visual fragmentation, high cognitive load, and a debugging-tool aesthetic.
+2. Persisting merged sessions into a new SQLite database table introduces data duplication, mutable state synchronisation bugs, and cache-invalidation hazards during historical reprocessing.
+3. Gaps in activity (computer suspend, tracking pause, unrecorded intervals) must not be falsely merged into giant sessions or confused with active desk idle (AFK).
+
+**Options Considered:**
+1. Mutate the analytical model to use variable-length blocks - Rejected; breaks deterministic 3-minute epoch boundaries, complicates LLM prompt token budgeting, and violates Phase 3 architecture.
+2. Create a persistent `sessions` table in SQLite - Rejected; creates duplicate mutable storage, violates the single-source-of-truth hierarchy, and requires dual-write/invalidation logic.
+3. Maintain `TimeBlock` as the immutable analytical storage unit in SQLite, derive `ActivitySession` purely in-memory at the presentation layer via deterministic coalescing, and reconstruct sub-minute composition on demand via `get_block_composition`.
+
+**Decision:**
+1. **Separation of Representations:**
+   - Analytical unit: `TimeBlock` (fixed 3-minute epoch `[start_ms, end_ms)`, persisted in SQLite).
+   - User-facing unit: `ActivitySession` (variable-duration continuous activity, derived in-memory on demand).
+2. **Deterministic Coalescing Rules:** Adjacent `TimeBlock`s are merged into an `ActivitySession` if and only if:
+   - They are temporally contiguous (`block[i].end_ms == block[i+1].start_ms`).
+   - They share the exact same `dominant_app`.
+   - They share the exact same `activity_type` (`Active`, `Afk`, or `Unknown`).
+3. **Application and Type Transitions Preserved:** Any change in application (e.g., VS Code -> Slack -> VS Code) or activity type (e.g., Active -> Afk) splits sessions deterministically.
+4. **Unrecorded Gap Insertion:** Gaps between recorded sessions of 3 minutes or greater (180,000 ms) are surfaced as explicit unrecorded gap sessions (`dominant_app = "unrecorded"`, `activity_type = Unknown`), cleanly separating absence of observations from active desk idle (`Afk`).
+5. **On-Demand Secondary Activity Drill-Down:** The timeline surfaces secondary applications (`secondary_apps`) by calculating duration breakdown from underlying raw segments on the fly. Detailed drill-down (`get_session_details`) queries `get_block_composition` without redundant storage.
+6. **Strict Half-Open Daily Querying:** Daily timelines query `[day_start_ms, day_end_ms)` where `day_end_ms` is the start of the subsequent local day. Boundaries at midnight are strictly disjoint and prevent duplicate or lost sessions.
+
+**Rationale:**
+- Preserves the purity and immutability of the analytical 3-minute aggregation pipeline.
+- Zero database migrations or extra table overhead.
+- Provides a clean, calm, and readable user experience tailored for developers.
+- Guarantees losslessness: sub-minute precision remains available on demand.
+
+**Consequences:**
+- User-facing timeline displays continuous, readable sessions with low visual noise.
+- Under-the-hood analytical fidelity is preserved for future AI classification (Phases 6-7).
+- Query latency remains sub-millisecond even on heavily tracked days.
+
+**Reversibility:** High. Coalescing logic is entirely in-memory in the presentation layer and does not alter the underlying SQLite schema.
+

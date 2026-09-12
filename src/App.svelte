@@ -6,6 +6,7 @@
   import LoadingState from "./lib/components/LoadingState.svelte";
   import ErrorState from "./lib/components/ErrorState.svelte";
   import EmptyState from "./lib/components/EmptyState.svelte";
+  import Timeline from "./lib/components/Timeline.svelte";
   import {
     getAppInfo,
     getAppStatus,
@@ -32,7 +33,7 @@
   let recentBlocks = $state<TimeBlock[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let activeTab = $state<"overview" | "blocks" | "capture" | "storage" | "architecture">("overview");
+  let activeTab = $state<"timeline" | "overview" | "blocks" | "capture" | "storage" | "architecture">("timeline");
   let isReprocessing = $state(false);
   let reprocessMessage = $state<string | null>(null);
 
@@ -153,10 +154,18 @@
   />
 
   <nav class="border-b border-neutral-800/80 bg-neutral-900/40 px-6">
-    <div class="flex space-x-6 text-xs font-mono">
+    <div class="flex space-x-6 text-xs font-mono overflow-x-auto">
+      <button
+        onclick={() => (activeTab = "timeline")}
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "timeline"
+          ? "border-neutral-200 text-neutral-100 font-semibold"
+          : "border-transparent text-neutral-400 hover:text-neutral-200"}"
+      >
+        Activity Timeline
+      </button>
       <button
         onclick={() => (activeTab = "overview")}
-        class="py-3 border-b-2 transition {activeTab === "overview"
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "overview"
           ? "border-neutral-200 text-neutral-100 font-semibold"
           : "border-transparent text-neutral-400 hover:text-neutral-200"}"
       >
@@ -164,7 +173,7 @@
       </button>
       <button
         onclick={() => (activeTab = "blocks")}
-        class="py-3 border-b-2 transition {activeTab === "blocks"
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "blocks"
           ? "border-neutral-200 text-neutral-100 font-semibold"
           : "border-transparent text-neutral-400 hover:text-neutral-200"}"
       >
@@ -172,7 +181,7 @@
       </button>
       <button
         onclick={() => (activeTab = "capture")}
-        class="py-3 border-b-2 transition {activeTab === "capture"
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "capture"
           ? "border-neutral-200 text-neutral-100 font-semibold"
           : "border-transparent text-neutral-400 hover:text-neutral-200"}"
       >
@@ -180,7 +189,7 @@
       </button>
       <button
         onclick={() => (activeTab = "storage")}
-        class="py-3 border-b-2 transition {activeTab === "storage"
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "storage"
           ? "border-neutral-200 text-neutral-100 font-semibold"
           : "border-transparent text-neutral-400 hover:text-neutral-200"}"
       >
@@ -188,7 +197,7 @@
       </button>
       <button
         onclick={() => (activeTab = "architecture")}
-        class="py-3 border-b-2 transition {activeTab === "architecture"
+        class="py-3 border-b-2 transition shrink-0 {activeTab === "architecture"
           ? "border-neutral-200 text-neutral-100 font-semibold"
           : "border-transparent text-neutral-400 hover:text-neutral-200"}"
       >
@@ -208,6 +217,8 @@
       <LoadingState message="Connecting to Tendly Rust Core via Tauri IPC..." />
     {:else if error}
       <ErrorState title="IPC Bridge Error" message={error} onRetry={loadData} />
+    {:else if activeTab === "timeline"}
+      <Timeline {currentActivity} />
     {:else if activeTab === "overview"}
       <div class="rounded border border-neutral-800 bg-neutral-900/60 p-5 font-mono">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-neutral-800/80 pb-4">

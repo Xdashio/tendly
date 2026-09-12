@@ -143,3 +143,46 @@ pub struct TimeBlock {
     pub classified_by: Option<String>,
     pub user_override: Option<Classification>,
 }
+
+/// A summary of duration spent in an application.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppDurationSummary {
+    pub app: String,
+    pub duration_ms: i64,
+}
+
+/// A user-facing contiguous activity session coalesced from adjacent compatible TimeBlocks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActivitySession {
+    pub id: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub duration_ms: i64,
+    pub dominant_app: String,
+    pub dominant_title: String,
+    pub activity_type: ActivityType,
+    pub block_count: usize,
+    pub time_blocks: Vec<TimeBlock>,
+    pub has_secondary_activity: bool,
+    pub secondary_apps: Vec<AppDurationSummary>,
+}
+
+/// Complete detailed drill-down data for a single user session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionDetails {
+    pub session: ActivitySession,
+    pub segments: Vec<ActivitySegment>,
+    pub app_breakdown: Vec<AppDurationSummary>,
+}
+
+/// Chronological user-facing activity timeline for a discrete date window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DailyTimeline {
+    pub day_start_ms: i64,
+    pub day_end_ms: i64,
+    pub sessions: Vec<ActivitySession>,
+    pub total_active_ms: i64,
+    pub total_afk_ms: i64,
+    pub total_unknown_ms: i64,
+    pub block_count: usize,
+}

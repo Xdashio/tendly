@@ -137,3 +137,29 @@ pub fn get_block_composition(
     crate::processing::ActivityProcessor::get_block_composition(&state.db, start_ms, end_ms)
         .map_err(crate::core::IpcError::from)
 }
+
+#[tauri::command]
+pub fn get_daily_timeline(
+    day_start_ms: i64,
+    day_end_ms: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::domain::DailyTimeline, crate::core::IpcError> {
+    crate::processing::ActivityProcessor::get_daily_timeline(&state.db, day_start_ms, day_end_ms)
+        .map_err(crate::core::IpcError::from)
+}
+
+#[tauri::command]
+pub fn get_session_details(
+    session_id: String,
+    start_ms: i64,
+    end_ms: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::domain::SessionDetails, crate::core::IpcError> {
+    crate::processing::ActivityProcessor::get_session_details(
+        &state.db,
+        &session_id,
+        start_ms,
+        end_ms,
+    )
+    .map_err(crate::core::IpcError::from)
+}
