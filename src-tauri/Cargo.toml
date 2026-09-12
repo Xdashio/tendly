@@ -25,7 +25,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.15", features = ["v4", "serde"] }
+uuid = { version = "1.15", features = ["v4", "v5", "serde"] }
 tokio = { version = "1.43", features = ["full"] }
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "screensaver"] }
 
