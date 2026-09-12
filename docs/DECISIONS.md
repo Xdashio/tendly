@@ -646,7 +646,7 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 **Consequences:**
 - User-facing timeline displays continuous, readable sessions with low visual noise.
 - Under-the-hood analytical fidelity is preserved for future AI classification (Phases 6-7).
-- Query latency remains sub-millisecond even on heavily tracked days.
+- Query latency remains bounded and lightweight on indexed range lookups, without loading the entire raw event history.
 
 **Reversibility:** High. Coalescing logic is entirely in-memory in the presentation layer and does not alter the underlying SQLite schema.
 

@@ -208,4 +208,108 @@ mod tests {
         let sessions = coalesce_blocks_into_sessions(&[b1, b2]);
         assert_eq!(sessions.len(), 2);
     }
+
+    #[test]
+    fn test_no_coalesce_with_1ms_gap() {
+        let t0 = 1_800_000;
+        let b1 = make_block(t0, "code", "editor", ActivityType::Active);
+        // Next block starts 1 millisecond after b1 ends (180_001 ms after t0)
+        let mut b2 = make_block(t0 + 180_001, "code", "editor", ActivityType::Active);
+        b2.end_ms = t0 + 360_001;
+
+        let sessions = coalesce_blocks_into_sessions(&[b1, b2]);
+        assert_eq!(
+            sessions.len(),
+            2,
+            "Even a 1 ms gap must strictly prevent session merging"
+        );
+        assert_eq!(sessions[0].end_ms, t0 + 180_000);
+        assert_eq!(sessions[1].start_ms, t0 + 180_001);
+    }
+
+    #[test]
+    fn test_unrecorded_gap_boundary_conditions() {
+        let t0 = 1_800_000;
+
+        // Sub-3-minute gap: 179,999 ms
+        let s1 = ActivitySession {
+            id: "s1".to_string(),
+            start_ms: t0,
+            end_ms: t0 + 180_000,
+            duration_ms: 180_000,
+            dominant_app: "code".to_string(),
+            dominant_title: "main.rs".to_string(),
+            activity_type: ActivityType::Active,
+            block_count: 1,
+            time_blocks: Vec::new(),
+            has_secondary_activity: false,
+            secondary_apps: Vec::new(),
+        };
+        let s2_sub = ActivitySession {
+            id: "s2_sub".to_string(),
+            start_ms: t0 + 180_000 + 179_999, // gap = 179,999 ms (< 180,000)
+            end_ms: t0 + 180_000 + 179_999 + 180_000,
+            duration_ms: 180_000,
+            dominant_app: "code".to_string(),
+            dominant_title: "main.rs".to_string(),
+            activity_type: ActivityType::Active,
+            block_count: 1,
+            time_blocks: Vec::new(),
+            has_secondary_activity: false,
+            secondary_apps: Vec::new(),
+        };
+        let res_sub = insert_unrecorded_gap_sessions(vec![s1.clone(), s2_sub], t0, t0 + 1_000_000);
+        assert_eq!(
+            res_sub.len(),
+            2,
+            "Gap < 180_000 ms must not produce an unrecorded gap session"
+        );
+
+        // Exact 3-minute gap: 180,000 ms
+        let s2_exact = ActivitySession {
+            id: "s2_exact".to_string(),
+            start_ms: t0 + 180_000 + 180_000, // gap = 180,000 ms
+            end_ms: t0 + 180_000 + 180_000 + 180_000,
+            duration_ms: 180_000,
+            dominant_app: "code".to_string(),
+            dominant_title: "main.rs".to_string(),
+            activity_type: ActivityType::Active,
+            block_count: 1,
+            time_blocks: Vec::new(),
+            has_secondary_activity: false,
+            secondary_apps: Vec::new(),
+        };
+        let res_exact =
+            insert_unrecorded_gap_sessions(vec![s1.clone(), s2_exact], t0, t0 + 1_000_000);
+        assert_eq!(
+            res_exact.len(),
+            3,
+            "Gap == 180_000 ms must produce exactly 1 unrecorded gap session"
+        );
+        assert_eq!(res_exact[1].dominant_app, "unrecorded");
+        assert_eq!(res_exact[1].duration_ms, 180_000);
+
+        // Super-3-minute gap: 180,001 ms
+        let s2_super = ActivitySession {
+            id: "s2_super".to_string(),
+            start_ms: t0 + 180_000 + 180_001, // gap = 180,001 ms
+            end_ms: t0 + 180_000 + 180_001 + 180_000,
+            duration_ms: 180_000,
+            dominant_app: "code".to_string(),
+            dominant_title: "main.rs".to_string(),
+            activity_type: ActivityType::Active,
+            block_count: 1,
+            time_blocks: Vec::new(),
+            has_secondary_activity: false,
+            secondary_apps: Vec::new(),
+        };
+        let res_super = insert_unrecorded_gap_sessions(vec![s1, s2_super], t0, t0 + 1_000_000);
+        assert_eq!(
+            res_super.len(),
+            3,
+            "Gap > 180_000 ms must produce an unrecorded gap session"
+        );
+        assert_eq!(res_super[1].dominant_app, "unrecorded");
+        assert_eq!(res_super[1].duration_ms, 180_001);
+    }
 }

@@ -14,7 +14,7 @@
 //! 11. Current activity: stale blocks are not treated as current.
 
 use tempfile::NamedTempFile;
-use tendly_lib::domain::{ActivityType, RawEvent, RawEventSource, TimeBlock};
+use tendly_lib::domain::{ActivitySession, ActivityType, RawEvent, RawEventSource, TimeBlock};
 use tendly_lib::processing::session::{
     coalesce_blocks_into_sessions, insert_unrecorded_gap_sessions,
 };
@@ -423,4 +423,193 @@ fn test_11_current_activity_freshness() {
         .unwrap();
     assert_eq!(fresh_state.active_app, "code");
     assert_eq!(fresh_state.activity_type, ActivityType::Active);
+}
+
+// ---------------------------------------------------------------------------
+// 12. NON-ZERO 1 MS SUB-BLOCK GAP
+// ---------------------------------------------------------------------------
+#[test]
+fn test_12_non_zero_1ms_sub_block_gap() {
+    let t0 = 1_800_000;
+    let b1 = make_block(t0, "code", "editor.rs", ActivityType::Active);
+    // Block 2 starts 1 ms after Block 1 ends
+    let mut b2 = make_block(t0 + 180_001, "code", "editor.rs", ActivityType::Active);
+    b2.end_ms = t0 + 360_001;
+
+    let sessions = coalesce_blocks_into_sessions(&[b1, b2]);
+    assert_eq!(
+        sessions.len(),
+        2,
+        "Even a 1 ms gap between blocks must strictly prevent merging into a single session"
+    );
+    assert_eq!(sessions[0].end_ms, t0 + 180_000);
+    assert_eq!(sessions[1].start_ms, t0 + 180_001);
+}
+
+// ---------------------------------------------------------------------------
+// 13. GAP BOUNDARY EXACT THRESHOLDS (< 3m, == 3m, > 3m)
+// ---------------------------------------------------------------------------
+#[test]
+fn test_13_gap_boundary_thresholds() {
+    let t0 = 1_800_000;
+
+    let s1 = ActivitySession {
+        id: "s1".to_string(),
+        start_ms: t0,
+        end_ms: t0 + 180_000,
+        duration_ms: 180_000,
+        dominant_app: "code".to_string(),
+        dominant_title: "main.rs".to_string(),
+        activity_type: ActivityType::Active,
+        block_count: 1,
+        time_blocks: Vec::new(),
+        has_secondary_activity: false,
+        secondary_apps: Vec::new(),
+    };
+
+    // Sub-threshold: gap = 179_999 ms (< 180,000 ms)
+    let s2_sub = ActivitySession {
+        id: "s2_sub".to_string(),
+        start_ms: t0 + 180_000 + 179_999,
+        end_ms: t0 + 180_000 + 179_999 + 180_000,
+        duration_ms: 180_000,
+        dominant_app: "code".to_string(),
+        dominant_title: "main.rs".to_string(),
+        activity_type: ActivityType::Active,
+        block_count: 1,
+        time_blocks: Vec::new(),
+        has_secondary_activity: false,
+        secondary_apps: Vec::new(),
+    };
+    let timeline_sub = insert_unrecorded_gap_sessions(vec![s1.clone(), s2_sub], t0, t0 + 1_000_000);
+    assert_eq!(
+        timeline_sub.len(),
+        2,
+        "Sub-3-minute gap (179,999 ms) must not insert an unrecorded gap session"
+    );
+
+    // Exact threshold: gap = 180_000 ms
+    let s2_exact = ActivitySession {
+        id: "s2_exact".to_string(),
+        start_ms: t0 + 180_000 + 180_000,
+        end_ms: t0 + 180_000 + 180_000 + 180_000,
+        duration_ms: 180_000,
+        dominant_app: "code".to_string(),
+        dominant_title: "main.rs".to_string(),
+        activity_type: ActivityType::Active,
+        block_count: 1,
+        time_blocks: Vec::new(),
+        has_secondary_activity: false,
+        secondary_apps: Vec::new(),
+    };
+    let timeline_exact =
+        insert_unrecorded_gap_sessions(vec![s1.clone(), s2_exact], t0, t0 + 1_000_000);
+    assert_eq!(
+        timeline_exact.len(),
+        3,
+        "Exact 3-minute gap (180,000 ms) must produce an unrecorded gap session"
+    );
+    assert_eq!(timeline_exact[1].dominant_app, "unrecorded");
+    assert_eq!(timeline_exact[1].duration_ms, 180_000);
+
+    // Super-threshold: gap = 600_000 ms (10 minutes)
+    let s2_super = ActivitySession {
+        id: "s2_super".to_string(),
+        start_ms: t0 + 180_000 + 600_000,
+        end_ms: t0 + 180_000 + 600_000 + 180_000,
+        duration_ms: 180_000,
+        dominant_app: "code".to_string(),
+        dominant_title: "main.rs".to_string(),
+        activity_type: ActivityType::Active,
+        block_count: 1,
+        time_blocks: Vec::new(),
+        has_secondary_activity: false,
+        secondary_apps: Vec::new(),
+    };
+    let timeline_super = insert_unrecorded_gap_sessions(vec![s1, s2_super], t0, t0 + 2_000_000);
+    assert_eq!(
+        timeline_super.len(),
+        3,
+        "Super-3-minute gap must produce an unrecorded gap session"
+    );
+    assert_eq!(timeline_super[1].dominant_app, "unrecorded");
+    assert_eq!(timeline_super[1].duration_ms, 600_000);
+}
+
+// ---------------------------------------------------------------------------
+// 14. BOUNDED SESSION COMPOSITION SINGLE RETRIEVAL (NO N+1)
+// ---------------------------------------------------------------------------
+#[test]
+fn test_14_bounded_session_composition_single_retrieval() {
+    let (_file, db) = create_test_db();
+    let t0 = 360_000;
+    let num_blocks = 10; // 30 minutes continuous
+    let total_duration = (num_blocks as i64) * 180_000;
+
+    // Generate events across 10 blocks
+    for i in 0..num_blocks {
+        let block_start = t0 + (i as i64) * 180_000;
+        db.insert_raw_event(&make_event(block_start, "code", "file.rs"))
+            .unwrap();
+        // Mid-block context switch to browser for 30s
+        db.insert_raw_event(&make_event(
+            block_start + 120_000,
+            "firefox",
+            "search query",
+        ))
+        .unwrap();
+        db.insert_raw_event(&make_event(block_start + 150_000, "code", "file.rs"))
+            .unwrap();
+    }
+    db.insert_raw_event(&make_event(t0 + total_duration, "code", "file.rs"))
+        .unwrap();
+
+    ActivityProcessor::process_range(&db, t0, t0 + total_duration).unwrap();
+
+    // Query session details for the entire 30-minute session in one call
+    let details =
+        ActivityProcessor::get_session_details(&db, "session_30m", t0, t0 + total_duration)
+            .unwrap();
+
+    assert_eq!(details.session.dominant_app, "code");
+    assert_eq!(details.session.duration_ms, total_duration);
+    assert_eq!(details.session.block_count, 10);
+    assert!(!details.segments.is_empty());
+
+    let code_stat = details
+        .app_breakdown
+        .iter()
+        .find(|a| a.app == "code")
+        .expect("code must be in breakdown");
+    let firefox_stat = details
+        .app_breakdown
+        .iter()
+        .find(|a| a.app == "firefox")
+        .expect("firefox must be in breakdown");
+
+    // 10 blocks * 30s = 300s (300,000 ms) in firefox
+    assert_eq!(firefox_stat.duration_ms, 300_000);
+    // 10 blocks * 150s = 1500s (1,500,000 ms) in code
+    assert_eq!(code_stat.duration_ms, 1_500_000);
+}
+
+// ---------------------------------------------------------------------------
+// 15. FUTURE DATE QUERY EMPTY TIMELINE
+// ---------------------------------------------------------------------------
+#[test]
+fn test_15_future_date_empty_timeline() {
+    let (_file, db) = create_test_db();
+    // Some far future date
+    let future_start: i64 = 2_500_000_000_000;
+    let future_end: i64 = future_start + 86_400_000;
+
+    let timeline = ActivityProcessor::get_daily_timeline(&db, future_start, future_end).unwrap();
+
+    assert_eq!(
+        timeline.sessions.len(),
+        0,
+        "Future date must return 0 sessions"
+    );
+    assert_eq!(timeline.total_active_ms, 0);
+    assert_eq!(timeline.block_count, 0);
 }

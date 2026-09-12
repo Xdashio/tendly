@@ -235,4 +235,88 @@ describe('Timeline Component', () => {
       expect(api.getDailyTimeline).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('does not create duplicate session cards when current activity is active', async () => {
+    vi.mocked(api.getDailyTimeline).mockResolvedValueOnce({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [
+        {
+          id: 'session:current_overlap',
+          start_ms: 1700032800000,
+          end_ms: 1700036400000,
+          duration_ms: 3600000,
+          dominant_app: 'code',
+          dominant_title: 'src/main.rs',
+          activity_type: 'active',
+          block_count: 12,
+          time_blocks: [],
+          has_secondary_activity: false,
+          secondary_apps: [],
+        },
+      ],
+      total_active_ms: 3600000,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 12,
+    });
+
+    const currentActivity = {
+      active_app: 'code',
+      active_title: 'src/main.rs',
+      activity_type: 'active' as const,
+      current_block: null,
+      elapsed_in_state_seconds: 45,
+    };
+
+    const { findAllByText, findByText } = render(Timeline, { currentActivity });
+
+    // Live banner has 'Current activity:'
+    expect(await findByText('Current activity:')).toBeTruthy();
+    // Verify that exactly 1 session card exists with dominant title 'src/main.rs' (no duplicate session card)
+    const matches = await findAllByText('src/main.rs');
+    expect(matches.length).toBe(1);
+  });
+
+  it('displays idle notification when current activity is stale or unknown', async () => {
+    vi.mocked(api.getDailyTimeline).mockResolvedValueOnce({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [],
+      total_active_ms: 0,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 0,
+    });
+
+    const currentActivity = {
+      active_app: 'stale_app',
+      active_title: 'stale_title',
+      activity_type: 'unknown' as const,
+      current_block: null,
+      elapsed_in_state_seconds: 300,
+    };
+
+    const { findByText } = render(Timeline, { currentActivity });
+
+    expect(await findByText('No active window input detected')).toBeTruthy();
+    expect(await findByText('300s in state')).toBeTruthy();
+  });
+
+  it('disables Next button when viewing today to guard against future navigation', async () => {
+    vi.mocked(api.getDailyTimeline).mockResolvedValue({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [],
+      total_active_ms: 0,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 0,
+    });
+
+    const { findByTitle } = render(Timeline, { currentActivity: null });
+    const nextBtn = await findByTitle('Next Day');
+
+    expect(nextBtn.hasAttribute('disabled')).toBe(true);
+  });
 });

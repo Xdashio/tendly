@@ -135,6 +135,23 @@
   }
 
   const isToday = $derived(selectedDate === getTodayString());
+  const isFutureDate = $derived(selectedDate > getTodayString());
+
+  $effect(() => {
+    if (!isToday) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const { startMs, endMs } = getDayRange(selectedDate);
+        const res = await getDailyTimeline(startMs, endMs);
+        timeline = res;
+      } catch {
+        // Silently ignore background refresh errors
+      }
+    }, 15000);
+
+    return () => clearInterval(timer);
+  });
 </script>
 
 <div class="space-y-6">
@@ -156,7 +173,10 @@
         />
         <button
           onclick={() => changeDateByOffset(1)}
-          class="px-2.5 py-1 text-xs rounded border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition"
+          disabled={selectedDate >= getTodayString()}
+          class="px-2.5 py-1 text-xs rounded border transition {selectedDate >= getTodayString()
+            ? 'border-neutral-800 bg-neutral-900/50 text-neutral-600 cursor-not-allowed'
+            : 'border-neutral-700 bg-neutral-800 hover:bg-neutral-700 text-neutral-200'}"
           title="Next Day"
         >
           Next &gt;
@@ -197,12 +217,22 @@
 
   <!-- Live Activity Indicator (Only on Today) -->
   {#if isToday && currentActivity}
-    <div class="rounded border border-emerald-900/40 bg-emerald-950/10 px-4 py-3 text-xs font-mono flex items-center justify-between">
+    <div class="rounded border border-neutral-800 bg-neutral-900/60 px-4 py-3 text-xs font-mono flex items-center justify-between">
       <div class="flex items-center gap-2.5">
-        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="text-neutral-400">Current activity:</span>
-        <span class="font-semibold text-neutral-200">{currentActivity.active_app}</span>
-        <span class="text-neutral-500 truncate max-w-md">({currentActivity.active_title})</span>
+        {#if currentActivity.activity_type === "unknown"}
+          <span class="inline-block w-2 h-2 rounded-full bg-neutral-500"></span>
+          <span class="text-neutral-500">Current status:</span>
+          <span class="text-neutral-400 italic">No active window input detected</span>
+        {:else if currentActivity.activity_type === "afk"}
+          <span class="inline-block w-2 h-2 rounded-full bg-amber-400"></span>
+          <span class="text-neutral-400">Current status:</span>
+          <span class="font-semibold text-amber-300">Away from keyboard (AFK)</span>
+        {:else}
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-neutral-400">Current activity:</span>
+          <span class="font-semibold text-neutral-200">{currentActivity.active_app}</span>
+          <span class="text-neutral-500 truncate max-w-md">({currentActivity.active_title})</span>
+        {/if}
       </div>
       <div class="text-neutral-400 shrink-0">
         {currentActivity.elapsed_in_state_seconds}s in state
@@ -215,6 +245,11 @@
     <LoadingState message="Loading activity timeline for {selectedDate}..." />
   {:else if error}
     <ErrorState title="Timeline Error" message={error} onRetry={loadTimeline} />
+  {:else if isFutureDate}
+    <EmptyState
+      title="Future date: {selectedDate}"
+      description="Tendly cannot record activity for future dates. Return to Today or select a past date."
+    />
   {:else if !timeline || timeline.sessions.length === 0}
     <EmptyState
       title="No recorded activity for {selectedDate}"

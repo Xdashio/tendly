@@ -19,7 +19,7 @@ Desktop Timeline UI (clean, calm chronological history)
 ### Key Principles:
 1. **TimeBlock is an internal analytical unit.** It partitions time into fixed 3-minute epoch intervals `[start_ms, end_ms)` where `start_ms = T - (T % 180_000)`. This structure is required for deterministic rules matching, token-budgeted AI classification prompts, and historical recalculation.
 2. **ActivitySession is a derived presentation entity.** Users conceptualize activity as sessions (e.g., "VS Code for 45 minutes", "Firefox for 15 minutes"), not sixteen discrete 3-minute blocks. Sessions are derived in-memory on demand via deterministic coalescing.
-3. **No Redundant Storage:** Derived sessions are never written to a secondary database table. They are computed dynamically from `TimeBlock`s and underlying `ActivitySegment`s in sub-millisecond query time.
+3. **No Redundant Storage:** Derived sessions are never written to a secondary database table. They are computed dynamically from `TimeBlock`s and underlying `ActivitySegment`s using bounded, indexed range queries on demand.
 
 ---
 
