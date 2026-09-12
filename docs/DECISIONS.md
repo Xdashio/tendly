@@ -692,3 +692,52 @@ This document records the major decisions made during Phase 0 of Tendly's discov
 
 **Reversibility:** High. Enrichment logic is isolated to the capture and reconstruction layer and does not alter database schema invariants.
 
+---
+
+### ADR-025: Deterministic Rules-Based Activity Classification and Taxonomy
+
+**Date:** 2026-09-13
+**Status:** Accepted
+
+**Context:**
+Phase 6 introduces activity classification to convert raw desktop and browser observations into meaningful categories. The classification system must operate strictly offline on Linux desktop environments without cloud dependencies, external network calls, heuristics, embeddings, machine learning, or local LLM inference (reserved for Phase 7). Furthermore, it must remain objective and avoid moralistic productivity scoring.
+
+**Problem:**
+1. Defining an exhaustive, controlled taxonomy of activity categories tailored for software engineers.
+2. Formulating a deterministic, explainable precedence hierarchy capable of resolving conflicts between application identity, window titles, and browser domains.
+3. Integrating classification cleanly into the existing processing chain (`RawEvents` -> `ActivitySegments` -> `TimeBlocks` -> `ActivitySessions`) without schema mutations or violating the single-source-of-truth invariant.
+4. Ensuring complete explainability: every classification decision must specify the rule, matcher, and rationale.
+
+**Options Considered:**
+1. Local ML / Embeddings: Semantic vector similarity against category centroids. Rejected for Phase 6 due to resource footprint, indeterminacy, lack of explainability, and phase scope constraints.
+2. User-Prompted Classification: Querying the user on unrecognized apps. Rejected due to cognitive interruption.
+3. Deterministic Hierarchical Rules Engine: In-memory evaluation over domain, title, and application attributes with explicit precedence tiers and deterministic tie-breaking.
+
+**Decision:**
+1. **Taxonomy:** Establish a controlled 9-category taxonomy: `development`, `communication`, `research`, `productivity`, `design`, `entertainment`, `system`, `browsing`, `unknown`.
+2. **Precedence Hierarchy:**
+   - User Rules (priority 1000..1999) > Default Rules (priority 100..999) > Generic Fallbacks (priority 0..99).
+   - Within each tier: Domain Match > Title Match > Application Match.
+   - Deterministic tie-breaker: sort rules once by `(priority DESC, rule_id ASC)`.
+3. **Lossless Integration:**
+   - `ActivitySegment`s are classified during reconstruction from raw events.
+   - 3-minute `TimeBlock`s aggregate category durations and select the dominant category via plurality active duration.
+   - `ActivitySession`s compute a full `category_breakdown` and determine the session `dominant_category`.
+   - Idempotent historical reprocessing recalculates classifications from canonical raw events.
+4. **Explainability:** All classifications output `ClassificationResult` containing `category`, `confidence`, `source`, `rule_id`, `matched_by`, and human-readable `explanation`.
+5. **No Productivity Judgment:** Tendly treats categories as objective operational classifications, never assigning distraction penalties or productivity scores.
+
+**Rationale:**
+- 100% deterministic, testable, and reproducible across platforms.
+- Instantaneous sub-millisecond evaluation with zero memory/CPU overhead.
+- Total transparency: users can see exactly why every minute was categorized.
+- Seamless compatibility with future Phase 7 local LLM summarization.
+
+**Consequences:**
+- Users receive immediate, meaningful activity categorizations out of the box.
+- Browser domain rules properly override generic browser process classifications (e.g. YouTube in Firefox -> entertainment, GitHub in Chrome -> development).
+- Zero database migrations required.
+
+**Reversibility:**
+High. The classification rules engine is an in-memory evaluation and enrichment layer that can be modified, reordered, or replaced without database restructuring.
+

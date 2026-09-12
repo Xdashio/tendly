@@ -124,6 +124,8 @@ impl ActivityProcessor {
                     source: seg.source,
                     event_count: seg.event_count,
                     browser_context: seg.browser_context,
+                    category: seg.category,
+                    classification: seg.classification,
                 });
             }
         }
@@ -140,28 +142,16 @@ impl ActivityProcessor {
         let blocks = db.get_time_blocks_range(day_start_ms, day_end_ms)?;
         let block_count = blocks.len();
 
-        let mut total_active_ms = 0;
-        let mut total_afk_ms = 0;
-        let mut total_unknown_ms = 0;
+        let mut total_active_ms: i64 = 0;
+        let mut total_afk_ms: i64 = 0;
+        let mut total_unknown_ms: i64 = 0;
 
-        for b in &blocks {
-            match b.activity_type {
-                ActivityType::Active => total_active_ms += b.duration_ms,
-                ActivityType::Afk => total_afk_ms += b.duration_ms,
-                ActivityType::Unknown => total_unknown_ms += b.duration_ms,
+        for block in &blocks {
+            match block.activity_type {
+                ActivityType::Active => total_active_ms += block.duration_ms,
+                ActivityType::Afk => total_afk_ms += block.duration_ms,
+                ActivityType::Unknown => total_unknown_ms += block.duration_ms,
             }
-        }
-
-        if blocks.is_empty() {
-            return Ok(DailyTimeline {
-                day_start_ms,
-                day_end_ms,
-                sessions: Vec::new(),
-                total_active_ms: 0,
-                total_afk_ms: 0,
-                total_unknown_ms: 0,
-                block_count: 0,
-            });
         }
 
         let mut coalesced = crate::processing::session::coalesce_blocks_into_sessions(&blocks);
@@ -173,6 +163,11 @@ impl ActivityProcessor {
         for session in &mut coalesced {
             let mut app_totals: std::collections::HashMap<String, i64> =
                 std::collections::HashMap::new();
+            let mut category_totals: std::collections::HashMap<
+                crate::domain::ActivityCategory,
+                i64,
+            > = std::collections::HashMap::new();
+
             for seg in &day_segments {
                 if seg.end_ms <= session.start_ms || seg.start_ms >= session.end_ms {
                     continue;
@@ -182,6 +177,7 @@ impl ActivityProcessor {
                 let dur = (overlap_end - overlap_start).max(0);
                 if dur > 0 {
                     *app_totals.entry(seg.app.clone()).or_insert(0) += dur;
+                    *category_totals.entry(seg.category).or_insert(0) += dur;
                 }
             }
 
@@ -198,6 +194,25 @@ impl ActivityProcessor {
 
             session.has_secondary_activity = !secondary.is_empty();
             session.secondary_apps = secondary;
+
+            let mut category_summaries: Vec<crate::domain::CategoryDurationSummary> =
+                category_totals
+                    .into_iter()
+                    .map(
+                        |(category, duration_ms)| crate::domain::CategoryDurationSummary {
+                            category,
+                            duration_ms,
+                        },
+                    )
+                    .collect();
+            category_summaries.sort_by(|a, b| {
+                b.duration_ms
+                    .cmp(&a.duration_ms)
+                    .then_with(|| a.category.as_str().cmp(b.category.as_str()))
+            });
+
+            session.dominant_category = category_summaries.first().map(|c| c.category);
+            session.category_breakdown = category_summaries;
         }
 
         let sessions_with_gaps = crate::processing::session::insert_unrecorded_gap_sessions(
@@ -229,8 +244,12 @@ impl ActivityProcessor {
 
         let mut app_totals: std::collections::HashMap<String, i64> =
             std::collections::HashMap::new();
+        let mut category_totals: std::collections::HashMap<crate::domain::ActivityCategory, i64> =
+            std::collections::HashMap::new();
+
         for seg in &segments {
             *app_totals.entry(seg.app.clone()).or_insert(0) += seg.duration_ms();
+            *category_totals.entry(seg.category).or_insert(0) += seg.duration_ms();
         }
 
         let mut app_breakdown: Vec<AppDurationSummary> = app_totals
@@ -241,6 +260,21 @@ impl ActivityProcessor {
             b.duration_ms
                 .cmp(&a.duration_ms)
                 .then_with(|| a.app.cmp(&b.app))
+        });
+
+        let mut category_breakdown: Vec<crate::domain::CategoryDurationSummary> = category_totals
+            .into_iter()
+            .map(
+                |(category, duration_ms)| crate::domain::CategoryDurationSummary {
+                    category,
+                    duration_ms,
+                },
+            )
+            .collect();
+        category_breakdown.sort_by(|a, b| {
+            b.duration_ms
+                .cmp(&a.duration_ms)
+                .then_with(|| a.category.as_str().cmp(b.category.as_str()))
         });
 
         let coalesced = crate::processing::session::coalesce_blocks_into_sessions(&blocks);
@@ -256,6 +290,8 @@ impl ActivityProcessor {
                 .cloned()
                 .collect();
             s.has_secondary_activity = !s.secondary_apps.is_empty();
+            s.category_breakdown = category_breakdown.clone();
+            s.dominant_category = category_breakdown.first().map(|c| c.category);
             s
         } else {
             ActivitySession {
@@ -270,6 +306,8 @@ impl ActivityProcessor {
                 time_blocks: Vec::new(),
                 has_secondary_activity: false,
                 secondary_apps: Vec::new(),
+                dominant_category: Some(crate::domain::ActivityCategory::Unknown),
+                category_breakdown: Vec::new(),
             }
         };
 
@@ -277,6 +315,7 @@ impl ActivityProcessor {
             session,
             segments,
             app_breakdown,
+            category_breakdown,
         })
     }
 }

@@ -40,6 +40,33 @@ export interface DatabaseStats {
 
 export type ActivityType = 'active' | 'afk' | 'unknown';
 
+export type ActivityCategory =
+  | 'development'
+  | 'communication'
+  | 'research'
+  | 'productivity'
+  | 'design'
+  | 'entertainment'
+  | 'system'
+  | 'browsing'
+  | 'unknown';
+
+export type ClassificationSource = 'user_rule' | 'default_rule' | 'generic_fallback';
+
+export interface ClassificationResult {
+  category: ActivityCategory;
+  confidence: number;
+  source: ClassificationSource;
+  rule_id: string;
+  matched_by: string;
+  explanation: string;
+}
+
+export interface CategoryDurationSummary {
+  category: ActivityCategory;
+  duration_ms: number;
+}
+
 export interface TimeBlock {
   id: string;
   start_ms: number;
@@ -85,6 +112,8 @@ export interface ActivitySegment {
   source: string;
   event_count: number;
   browser_context?: BrowserContext | null;
+  category?: ActivityCategory;
+  classification?: ClassificationResult | null;
 }
 
 export interface ActivitySession {
@@ -95,16 +124,19 @@ export interface ActivitySession {
   dominant_app: string;
   dominant_title: string;
   activity_type: ActivityType;
+  dominant_category?: ActivityCategory | null;
   block_count: number;
   time_blocks: TimeBlock[];
   has_secondary_activity: boolean;
   secondary_apps: AppDurationSummary[];
+  category_breakdown?: CategoryDurationSummary[];
 }
 
 export interface SessionDetails {
   session: ActivitySession;
   segments: ActivitySegment[];
   app_breakdown: AppDurationSummary[];
+  category_breakdown?: CategoryDurationSummary[];
 }
 
 export interface DailyTimeline {
@@ -234,12 +266,18 @@ export async function getDailyTimeline(
           dominant_app: 'code',
           dominant_title: 'src/lib/api.ts - tendly',
           activity_type: 'active',
+          dominant_category: 'development',
           block_count: 15,
           time_blocks: [],
           has_secondary_activity: true,
           secondary_apps: [
             { app: 'firefox', duration_ms: 3 * 60 * 1000 },
             { app: 'slack', duration_ms: 2 * 60 * 1000 },
+          ],
+          category_breakdown: [
+            { category: 'development', duration_ms: 40 * 60 * 1000 },
+            { category: 'research', duration_ms: 3 * 60 * 1000 },
+            { category: 'communication', duration_ms: 2 * 60 * 1000 },
           ],
         },
         {
@@ -250,10 +288,14 @@ export async function getDailyTimeline(
           dominant_app: 'unrecorded',
           dominant_title: 'No recorded activity',
           activity_type: 'unknown',
+          dominant_category: 'unknown',
           block_count: 0,
           time_blocks: [],
           has_secondary_activity: false,
           secondary_apps: [],
+          category_breakdown: [
+            { category: 'unknown', duration_ms: 20 * 60 * 1000 },
+          ],
         },
         {
           id: `session:${t2}:${t3}`,
@@ -263,10 +305,14 @@ export async function getDailyTimeline(
           dominant_app: 'firefox',
           dominant_title: 'GitHub - tendly/tendly: Pull Request #4',
           activity_type: 'active',
+          dominant_category: 'development',
           block_count: 11,
           time_blocks: [],
           has_secondary_activity: false,
           secondary_apps: [],
+          category_breakdown: [
+            { category: 'development', duration_ms: 35 * 60 * 1000 },
+          ],
         },
       ],
       total_active_ms: 80 * 60 * 1000,
@@ -296,12 +342,18 @@ export async function getSessionDetails(
         dominant_app: 'code',
         dominant_title: 'src/lib/api.ts - tendly',
         activity_type: 'active',
+        dominant_category: 'development',
         block_count: Math.ceil((endMs - startMs) / 180_000),
         time_blocks: [],
         has_secondary_activity: true,
         secondary_apps: [
           { app: 'firefox', duration_ms: 180_000 },
           { app: 'slack', duration_ms: 120_000 },
+        ],
+        category_breakdown: [
+          { category: 'development', duration_ms: 40 * 60 * 1000 },
+          { category: 'research', duration_ms: 3 * 60 * 1000 },
+          { category: 'communication', duration_ms: 2 * 60 * 1000 },
         ],
       },
       segments: [
@@ -313,6 +365,15 @@ export async function getSessionDetails(
           activity_type: 'active',
           source: 'x11',
           event_count: 85,
+          category: 'development',
+          classification: {
+            category: 'development',
+            confidence: 0.9,
+            source: 'default_rule',
+            rule_id: 'default-app-code',
+            matched_by: 'app:code',
+            explanation: 'Matched default application rule for code',
+          },
         },
         {
           start_ms: startMs + 40 * 60 * 1000,
@@ -328,6 +389,15 @@ export async function getSessionDetails(
             url: null,
             domain: null,
           },
+          category: 'research',
+          classification: {
+            category: 'research',
+            confidence: 0.85,
+            source: 'default_rule',
+            rule_id: 'default-title-doc',
+            matched_by: 'title:Documentation',
+            explanation: 'Matched default title rule for documentation',
+          },
         },
         {
           start_ms: startMs + 43 * 60 * 1000,
@@ -337,12 +407,26 @@ export async function getSessionDetails(
           activity_type: 'active',
           source: 'x11',
           event_count: 8,
+          category: 'communication',
+          classification: {
+            category: 'communication',
+            confidence: 0.9,
+            source: 'default_rule',
+            rule_id: 'default-app-slack',
+            matched_by: 'app:slack',
+            explanation: 'Matched default application rule for slack',
+          },
         },
       ],
       app_breakdown: [
         { app: 'code', duration_ms: 40 * 60 * 1000 },
         { app: 'firefox', duration_ms: 3 * 60 * 1000 },
         { app: 'slack', duration_ms: 2 * 60 * 1000 },
+      ],
+      category_breakdown: [
+        { category: 'development', duration_ms: 40 * 60 * 1000 },
+        { category: 'research', duration_ms: 3 * 60 * 1000 },
+        { category: 'communication', duration_ms: 2 * 60 * 1000 },
       ],
     };
   }

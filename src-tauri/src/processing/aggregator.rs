@@ -33,6 +33,7 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
 
         // Collect all overlapping segments within this epoch
         let mut app_title_durations: HashMap<(String, String), i64> = HashMap::new();
+        let mut category_durations: HashMap<crate::domain::ActivityCategory, i64> = HashMap::new();
         let mut total_active_ms: i64 = 0;
         let mut total_afk_ms: i64 = 0;
         let mut total_unknown_ms: i64 = 0;
@@ -55,6 +56,7 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
                     total_active_ms += duration;
                     let key = (seg.app.clone(), seg.title.clone());
                     *app_title_durations.entry(key).or_insert(0) += duration;
+                    *category_durations.entry(seg.category).or_insert(0) += duration;
                 }
                 ActivityType::Afk => {
                     total_afk_ms += duration;
@@ -115,6 +117,40 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
                 None
             };
 
+            let (category, classified_by) = if activity_type == ActivityType::Active {
+                let dominant_cat = category_durations
+                    .into_iter()
+                    .max_by_key(|(_, d)| *d)
+                    .map(|(cat, _)| cat)
+                    .unwrap_or(crate::domain::ActivityCategory::Unknown);
+
+                let rule_id = segments
+                    .iter()
+                    .filter(|s| {
+                        s.app == dominant_app
+                            && s.title == dominant_title
+                            && s.start_ms < epoch_end
+                            && s.end_ms > epoch_start
+                    })
+                    .find_map(|s| s.classification.as_ref().and_then(|c| c.rule_id.clone()));
+
+                (Some(dominant_cat.as_str().to_string()), rule_id)
+            } else if activity_type == ActivityType::Afk {
+                (
+                    Some(crate::domain::ActivityCategory::System.as_str().to_string()),
+                    None,
+                )
+            } else {
+                (
+                    Some(
+                        crate::domain::ActivityCategory::Unknown
+                            .as_str()
+                            .to_string(),
+                    ),
+                    None,
+                )
+            };
+
             blocks.push(TimeBlock {
                 id: block_id,
                 start_ms: epoch_start,
@@ -125,9 +161,9 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
                 dominant_title,
                 dominant_url,
                 classification: None,
-                category: None,
+                category,
                 confidence: None,
-                classified_by: None,
+                classified_by,
                 user_override: None,
             });
         }
@@ -141,7 +177,7 @@ pub fn aggregate_segments_to_blocks(segments: &[ActivitySegment]) -> Vec<TimeBlo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{BrowserContext, BrowserType, RawEventSource};
+    use crate::domain::{ActivityCategory, BrowserContext, BrowserType, RawEventSource};
 
     #[test]
     fn test_single_active_segment_aggregation() {
@@ -154,6 +190,8 @@ mod tests {
             source: RawEventSource::X11,
             event_count: 3,
             browser_context: None,
+            category: ActivityCategory::Development,
+            classification: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[segment]);
@@ -164,6 +202,7 @@ mod tests {
         assert_eq!(blocks[0].dominant_title, "main.rs");
         assert_eq!(blocks[0].activity_type, ActivityType::Active);
         assert_eq!(blocks[0].dominant_url, None);
+        assert_eq!(blocks[0].category, Some("development".to_string()));
     }
 
     #[test]
@@ -179,6 +218,8 @@ mod tests {
             source: RawEventSource::X11,
             event_count: 1,
             browser_context: None,
+            category: ActivityCategory::Development,
+            classification: None,
         };
         let seg2 = ActivitySegment {
             start_ms: 50_000,
@@ -189,12 +230,15 @@ mod tests {
             source: RawEventSource::X11,
             event_count: 2,
             browser_context: None,
+            category: ActivityCategory::Development,
+            classification: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[seg1, seg2]);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].dominant_app, "code");
         assert_eq!(blocks[0].dominant_title, "main.rs");
+        assert_eq!(blocks[0].category, Some("development".to_string()));
     }
 
     #[test]
@@ -209,6 +253,8 @@ mod tests {
             source: RawEventSource::Afk,
             event_count: 1,
             browser_context: None,
+            category: ActivityCategory::System,
+            classification: None,
         };
         let seg_code = ActivitySegment {
             start_ms: 140_000,
@@ -219,6 +265,8 @@ mod tests {
             source: RawEventSource::X11,
             event_count: 1,
             browser_context: None,
+            category: ActivityCategory::Development,
+            classification: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[seg_afk, seg_code]);
@@ -226,6 +274,7 @@ mod tests {
         assert_eq!(blocks[0].activity_type, ActivityType::Afk);
         assert_eq!(blocks[0].dominant_app, "system");
         assert_eq!(blocks[0].dominant_title, "afk");
+        assert_eq!(blocks[0].category, Some("system".to_string()));
     }
 
     #[test]
@@ -244,6 +293,8 @@ mod tests {
                 url: Some("https://github.com/xdashio/tendly".to_string()),
                 domain: Some("github.com".to_string()),
             }),
+            category: ActivityCategory::Development,
+            classification: None,
         };
 
         let blocks = aggregate_segments_to_blocks(&[browser_seg]);
@@ -253,5 +304,40 @@ mod tests {
             blocks[0].dominant_url,
             Some("https://github.com/xdashio/tendly".to_string())
         );
+        assert_eq!(blocks[0].category, Some("development".to_string()));
+    }
+
+    #[test]
+    fn test_mixed_categories_plurality_winner() {
+        // 100s Development, 80s Communication in a single 3m block
+        let seg1 = ActivitySegment {
+            start_ms: 0,
+            end_ms: 100_000,
+            app: "code".to_string(),
+            title: "main.rs".to_string(),
+            activity_type: ActivityType::Active,
+            source: RawEventSource::X11,
+            event_count: 5,
+            browser_context: None,
+            category: ActivityCategory::Development,
+            classification: None,
+        };
+        let seg2 = ActivitySegment {
+            start_ms: 100_000,
+            end_ms: 180_000,
+            app: "slack".to_string(),
+            title: "#general".to_string(),
+            activity_type: ActivityType::Active,
+            source: RawEventSource::X11,
+            event_count: 3,
+            browser_context: None,
+            category: ActivityCategory::Communication,
+            classification: None,
+        };
+
+        let blocks = aggregate_segments_to_blocks(&[seg1, seg2]);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].dominant_app, "code");
+        assert_eq!(blocks[0].category, Some("development".to_string()));
     }
 }

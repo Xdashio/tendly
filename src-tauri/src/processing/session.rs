@@ -61,14 +61,25 @@ fn build_session_from_blocks(blocks: &[TimeBlock]) -> ActivitySession {
 
     // Pick dominant title by frequency across blocks
     let mut title_counts: HashMap<&str, usize> = HashMap::new();
+    let mut category_counts: HashMap<crate::domain::ActivityCategory, usize> = HashMap::new();
     for b in blocks {
         *title_counts.entry(&b.dominant_title).or_insert(0) += 1;
+        if let Some(ref cat_str) = b.category {
+            if let Ok(cat) = cat_str.parse::<crate::domain::ActivityCategory>() {
+                *category_counts.entry(cat).or_insert(0) += 1;
+            }
+        }
     }
     let dominant_title = title_counts
         .into_iter()
         .max_by_key(|(_, count)| *count)
         .map(|(title, _)| title.to_string())
         .unwrap_or_else(|| first.dominant_title.clone());
+
+    let dominant_category = category_counts
+        .into_iter()
+        .max_by_key(|(_, count)| *count)
+        .map(|(cat, _)| cat);
 
     let id = format!("session:{}:{}", start_ms, end_ms);
 
@@ -84,6 +95,8 @@ fn build_session_from_blocks(blocks: &[TimeBlock]) -> ActivitySession {
         time_blocks: blocks.to_vec(),
         has_secondary_activity: false,
         secondary_apps: Vec::new(),
+        dominant_category,
+        category_breakdown: Vec::new(),
     }
 }
 
@@ -122,6 +135,8 @@ pub fn insert_unrecorded_gap_sessions(
                     time_blocks: Vec::new(),
                     has_secondary_activity: false,
                     secondary_apps: Vec::new(),
+                    dominant_category: Some(crate::domain::ActivityCategory::Unknown),
+                    category_breakdown: Vec::new(),
                 });
             }
         } else {
@@ -244,6 +259,8 @@ mod tests {
             time_blocks: Vec::new(),
             has_secondary_activity: false,
             secondary_apps: Vec::new(),
+            dominant_category: None,
+            category_breakdown: Vec::new(),
         };
         let s2_sub = ActivitySession {
             id: "s2_sub".to_string(),
@@ -257,6 +274,8 @@ mod tests {
             time_blocks: Vec::new(),
             has_secondary_activity: false,
             secondary_apps: Vec::new(),
+            dominant_category: None,
+            category_breakdown: Vec::new(),
         };
         let res_sub = insert_unrecorded_gap_sessions(vec![s1.clone(), s2_sub], t0, t0 + 1_000_000);
         assert_eq!(
@@ -278,6 +297,8 @@ mod tests {
             time_blocks: Vec::new(),
             has_secondary_activity: false,
             secondary_apps: Vec::new(),
+            dominant_category: None,
+            category_breakdown: Vec::new(),
         };
         let res_exact =
             insert_unrecorded_gap_sessions(vec![s1.clone(), s2_exact], t0, t0 + 1_000_000);
@@ -302,6 +323,8 @@ mod tests {
             time_blocks: Vec::new(),
             has_secondary_activity: false,
             secondary_apps: Vec::new(),
+            dominant_category: None,
+            category_breakdown: Vec::new(),
         };
         let res_super = insert_unrecorded_gap_sessions(vec![s1, s2_super], t0, t0 + 1_000_000);
         assert_eq!(

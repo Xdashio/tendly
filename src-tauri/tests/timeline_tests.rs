@@ -461,10 +461,12 @@ fn test_13_gap_boundary_thresholds() {
         dominant_app: "code".to_string(),
         dominant_title: "main.rs".to_string(),
         activity_type: ActivityType::Active,
+        dominant_category: None,
         block_count: 1,
         time_blocks: Vec::new(),
         has_secondary_activity: false,
         secondary_apps: Vec::new(),
+        category_breakdown: Vec::new(),
     };
 
     // Sub-threshold: gap = 179_999 ms (< 180,000 ms)
@@ -476,10 +478,12 @@ fn test_13_gap_boundary_thresholds() {
         dominant_app: "code".to_string(),
         dominant_title: "main.rs".to_string(),
         activity_type: ActivityType::Active,
+        dominant_category: None,
         block_count: 1,
         time_blocks: Vec::new(),
         has_secondary_activity: false,
         secondary_apps: Vec::new(),
+        category_breakdown: Vec::new(),
     };
     let timeline_sub = insert_unrecorded_gap_sessions(vec![s1.clone(), s2_sub], t0, t0 + 1_000_000);
     assert_eq!(
@@ -497,10 +501,12 @@ fn test_13_gap_boundary_thresholds() {
         dominant_app: "code".to_string(),
         dominant_title: "main.rs".to_string(),
         activity_type: ActivityType::Active,
+        dominant_category: None,
         block_count: 1,
         time_blocks: Vec::new(),
         has_secondary_activity: false,
         secondary_apps: Vec::new(),
+        category_breakdown: Vec::new(),
     };
     let timeline_exact =
         insert_unrecorded_gap_sessions(vec![s1.clone(), s2_exact], t0, t0 + 1_000_000);
@@ -521,10 +527,12 @@ fn test_13_gap_boundary_thresholds() {
         dominant_app: "code".to_string(),
         dominant_title: "main.rs".to_string(),
         activity_type: ActivityType::Active,
+        dominant_category: None,
         block_count: 1,
         time_blocks: Vec::new(),
         has_secondary_activity: false,
         secondary_apps: Vec::new(),
+        category_breakdown: Vec::new(),
     };
     let timeline_super = insert_unrecorded_gap_sessions(vec![s1, s2_super], t0, t0 + 2_000_000);
     assert_eq!(

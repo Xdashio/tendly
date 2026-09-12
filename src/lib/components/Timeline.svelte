@@ -134,6 +134,30 @@
     }
   }
 
+  function getCategoryBadgeClass(category?: string | null): string {
+    switch (category) {
+      case "development":
+        return "border-sky-800/60 bg-sky-950/40 text-sky-300";
+      case "communication":
+        return "border-indigo-800/60 bg-indigo-950/40 text-indigo-300";
+      case "research":
+        return "border-teal-800/60 bg-teal-950/40 text-teal-300";
+      case "productivity":
+        return "border-emerald-800/60 bg-emerald-950/40 text-emerald-300";
+      case "design":
+        return "border-purple-800/60 bg-purple-950/40 text-purple-300";
+      case "entertainment":
+        return "border-amber-800/60 bg-amber-950/40 text-amber-300";
+      case "system":
+        return "border-neutral-700/60 bg-neutral-800/40 text-neutral-300";
+      case "browsing":
+        return "border-blue-800/60 bg-blue-950/40 text-blue-300";
+      case "unknown":
+      default:
+        return "border-neutral-800 bg-neutral-900/60 text-neutral-400";
+    }
+  }
+
   const isToday = $derived(selectedDate === getTodayString());
   const isFutureDate = $derived(selectedDate > getTodayString());
 
@@ -280,6 +304,14 @@
               <div class="space-y-1 min-w-0 flex-1">
                 <div class="flex items-center gap-2.5">
                   <span class="text-sm font-semibold text-neutral-100">{session.dominant_app}</span>
+                  {#if session.dominant_category}
+                    <span
+                      class="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border font-mono {getCategoryBadgeClass(session.dominant_category)}"
+                      data-testid="session-category-badge"
+                    >
+                      {session.dominant_category}
+                    </span>
+                  {/if}
                   <Badge
                     variant={getActivityBadgeVariant(session.activity_type)}
                     text={session.activity_type.toUpperCase()}
@@ -333,8 +365,33 @@
                 {:else}
                   {@const details = sessionDetailsCache[session.id]}
                   {#if details}
+                    <!-- Category Breakdown Summary -->
+                    {#if details.category_breakdown && details.category_breakdown.length > 0}
+                      <div class="space-y-2">
+                        <div class="text-[11px] uppercase tracking-wider text-neutral-400 font-semibold">
+                          Session Category Breakdown
+                        </div>
+                        <div class="space-y-1.5">
+                          {#each details.category_breakdown as item}
+                            {@const pct = Math.round((item.duration_ms / session.duration_ms) * 100)}
+                            <div class="flex items-center gap-3">
+                              <span class="w-24 truncate text-neutral-300 capitalize">{item.category}</span>
+                              <div class="flex-1 h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+                                <div
+                                  class="h-full bg-neutral-400"
+                                  style="width: {pct}%"
+                                ></div>
+                              </div>
+                              <span class="w-16 text-right text-neutral-400">{formatDetailedDuration(item.duration_ms)}</span>
+                              <span class="w-10 text-right text-neutral-500 text-[11px]">{pct}%</span>
+                            </div>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+
                     <!-- App Breakdown Summary -->
-                    <div class="space-y-2">
+                    <div class="space-y-2 {details.category_breakdown && details.category_breakdown.length > 0 ? 'pt-2 border-t border-neutral-800/60' : ''}">
                       <div class="text-[11px] uppercase tracking-wider text-neutral-400 font-semibold">
                         Session Application Breakdown
                       </div>
@@ -366,6 +423,15 @@
                           <div class="px-3 py-2 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 hover:bg-neutral-800/20 text-[11px]">
                             <div class="flex items-center gap-2 truncate flex-1 min-w-0">
                               <span class="font-semibold text-neutral-300 shrink-0">{seg.app}</span>
+                              {#if seg.category}
+                                <span
+                                  class="text-[9px] uppercase px-1.5 py-0.5 rounded border font-mono {getCategoryBadgeClass(seg.category)} shrink-0"
+                                  title={seg.classification?.explanation ?? seg.category}
+                                  data-testid="segment-category-badge"
+                                >
+                                  {seg.category}
+                                </span>
+                              {/if}
                               {#if seg.browser_context?.page_title}
                                 <span class="text-neutral-200 font-medium truncate">{seg.browser_context.page_title}</span>
                                 {#if seg.browser_context.domain}

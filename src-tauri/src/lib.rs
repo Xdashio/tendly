@@ -1,4 +1,5 @@
 pub mod capture;
+pub mod classification;
 pub mod commands;
 pub mod core;
 pub mod domain;
@@ -6,6 +7,7 @@ pub mod processing;
 pub mod storage;
 
 use crate::capture::{AfkWatcher, CapturePipeline, WatcherManager, WaylandWatcher, X11Watcher};
+use crate::classification::RuleEngine;
 use crate::core::config::AppConfig;
 use crate::core::logging::init_logging;
 use crate::domain::TrackingState;
@@ -19,6 +21,7 @@ pub struct AppState {
     pub tracking: Arc<Mutex<TrackingState>>,
     pub watchers: Arc<Mutex<WatcherManager>>,
     pub pipeline: Arc<CapturePipeline>,
+    pub rule_engine: Arc<RuleEngine>,
 }
 
 pub fn run() {
@@ -68,12 +71,15 @@ pub fn run() {
         ..Default::default()
     };
 
+    let rule_engine = Arc::new(RuleEngine::default());
+
     let app_state = AppState {
         db,
         config,
         tracking: Arc::new(Mutex::new(initial_tracking)),
         watchers: Arc::new(Mutex::new(watcher_manager)),
         pipeline,
+        rule_engine,
     };
 
     tauri::Builder::default()

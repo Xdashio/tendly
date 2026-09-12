@@ -375,4 +375,131 @@ describe('Timeline Component', () => {
     expect(await findByText('GitHub - tendly/tendly: Pull Request #5')).toBeTruthy();
     expect(await findByText('github.com')).toBeTruthy();
   });
+
+  it('renders calm category badge on session cards when dominant_category is present', async () => {
+    vi.mocked(api.getDailyTimeline).mockResolvedValueOnce({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [
+        {
+          id: 'session:classified',
+          start_ms: 1700032800000,
+          end_ms: 1700036400000,
+          duration_ms: 3600000,
+          dominant_app: 'code',
+          dominant_title: 'src/main.rs - tendly',
+          activity_type: 'active',
+          dominant_category: 'development',
+          block_count: 12,
+          time_blocks: [],
+          has_secondary_activity: false,
+          secondary_apps: [],
+        },
+      ],
+      total_active_ms: 3600000,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 12,
+    });
+
+    const { findByTestId, findByText } = render(Timeline, { currentActivity: null });
+
+    const badge = await findByTestId('session-category-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent?.trim()).toBe('development');
+    expect(await findByText('code')).toBeTruthy();
+  });
+
+  it('renders category breakdown and segment classification tooltip in drill-down details', async () => {
+    const session = {
+      id: 'session:category_drill',
+      start_ms: 1700032800000,
+      end_ms: 1700036400000,
+      duration_ms: 3600000,
+      dominant_app: 'code',
+      dominant_title: 'src/main.rs',
+      activity_type: 'active' as const,
+      dominant_category: 'development' as const,
+      block_count: 12,
+      time_blocks: [],
+      has_secondary_activity: false,
+      secondary_apps: [],
+    };
+
+    vi.mocked(api.getDailyTimeline).mockResolvedValueOnce({
+      day_start_ms: 1700000000000,
+      day_end_ms: 1700086400000,
+      sessions: [session],
+      total_active_ms: 3600000,
+      total_afk_ms: 0,
+      total_unknown_ms: 0,
+      block_count: 12,
+    });
+
+    vi.mocked(api.getSessionDetails).mockResolvedValueOnce({
+      session,
+      segments: [
+        {
+          start_ms: 1700032800000,
+          end_ms: 1700035800000,
+          app: 'code',
+          title: 'src/main.rs',
+          activity_type: 'active',
+          source: 'x11',
+          event_count: 50,
+          category: 'development',
+          classification: {
+            category: 'development',
+            confidence: 0.9,
+            source: 'default_rule',
+            rule_id: 'default-app-code',
+            matched_by: 'app:code',
+            explanation: 'Matched default application rule for code',
+          },
+        },
+        {
+          start_ms: 1700035800000,
+          end_ms: 1700036400000,
+          app: 'firefox',
+          title: 'Documentation',
+          activity_type: 'active',
+          source: 'x11',
+          event_count: 10,
+          category: 'research',
+          classification: {
+            category: 'research',
+            confidence: 0.85,
+            source: 'default_rule',
+            rule_id: 'default-title-doc',
+            matched_by: 'title:Documentation',
+            explanation: 'Matched default title rule for documentation',
+          },
+        },
+      ],
+      app_breakdown: [
+        { app: 'code', duration_ms: 3000000 },
+        { app: 'firefox', duration_ms: 600000 },
+      ],
+      category_breakdown: [
+        { category: 'development', duration_ms: 3000000 },
+        { category: 'research', duration_ms: 600000 },
+      ],
+    });
+
+    const { findByText, findAllByText, findAllByTestId } = render(Timeline, { currentActivity: null });
+    const inspectBtn = await findByText('Inspect [+]');
+    await fireEvent.click(inspectBtn);
+
+    // Verify Category Breakdown heading and items
+    expect(await findByText('Session Category Breakdown')).toBeTruthy();
+    expect(await findByText('Session Application Breakdown')).toBeTruthy();
+    expect((await findAllByText('development')).length).toBeGreaterThanOrEqual(2);
+    expect((await findAllByText('research')).length).toBeGreaterThanOrEqual(1);
+
+    // Verify segment badges and explanation tooltips
+    const segmentBadges = await findAllByTestId('segment-category-badge');
+    expect(segmentBadges.length).toBe(2);
+    expect(segmentBadges[0].getAttribute('title')).toBe('Matched default application rule for code');
+    expect(segmentBadges[1].getAttribute('title')).toBe('Matched default title rule for documentation');
+  });
 });

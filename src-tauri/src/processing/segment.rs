@@ -30,6 +30,8 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
     let mut raw_segments: Vec<ActivitySegment> = Vec::new();
     let n = sorted_events.len();
 
+    let rule_engine = crate::classification::RuleEngine::default();
+
     for i in 0..n {
         let current = &sorted_events[i];
         let next = if i + 1 < n {
@@ -71,6 +73,7 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
 
                 if is_afk_event {
                     // User entered AFK: period until next event is AFK
+                    let class_res = rule_engine.classify("system", "afk", ActivityType::Afk, None);
                     raw_segments.push(ActivitySegment {
                         start_ms,
                         end_ms: next_ts,
@@ -80,10 +83,14 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                         source: RawEventSource::Afk,
                         event_count: 1,
                         browser_context: None,
+                        category: class_res.category,
+                        classification: Some(class_res),
                     });
                 } else if is_active_resume_event {
                     // Marker event that user returned: minimal 0-length bridge or up to next event
                     if delta > 0 && delta <= MAX_OBSERVATION_GAP_MS {
+                        let class_res =
+                            rule_engine.classify("system", "active", ActivityType::Active, None);
                         raw_segments.push(ActivitySegment {
                             start_ms,
                             end_ms: next_ts,
@@ -93,10 +100,19 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             source: RawEventSource::Afk,
                             event_count: 1,
                             browser_context: None,
+                            category: class_res.category,
+                            classification: Some(class_res),
                         });
                     }
                 } else {
                     // Normal application active event
+                    let class_res = rule_engine.classify(
+                        &current.app,
+                        &current.title,
+                        ActivityType::Active,
+                        browser_context.as_ref(),
+                    );
+
                     if delta <= MAX_OBSERVATION_GAP_MS {
                         // Contiguous active observation
                         raw_segments.push(ActivitySegment {
@@ -108,6 +124,8 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             source: current.source,
                             event_count: 1,
                             browser_context: browser_context.clone(),
+                            category: class_res.category,
+                            classification: Some(class_res),
                         });
                     } else {
                         // Gap exceeded: cap active observation at HEARTBEAT_GRACE_MS
@@ -121,9 +139,13 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             source: current.source,
                             event_count: 1,
                             browser_context: browser_context.clone(),
+                            category: class_res.category,
+                            classification: Some(class_res),
                         });
 
                         // Remaining elapsed time is Unknown
+                        let unk_class =
+                            rule_engine.classify("system", "unknown", ActivityType::Unknown, None);
                         raw_segments.push(ActivitySegment {
                             start_ms: capped_end,
                             end_ms: next_ts,
@@ -133,6 +155,8 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                             source: current.source,
                             event_count: 0,
                             browser_context: None,
+                            category: unk_class.category,
+                            classification: Some(unk_class),
                         });
                     }
                 }
@@ -161,6 +185,13 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                     browser_context.clone()
                 };
 
+                let class_res = rule_engine.classify(
+                    &current.app,
+                    &current.title,
+                    activity_type,
+                    final_ctx.as_ref(),
+                );
+
                 raw_segments.push(ActivitySegment {
                     start_ms,
                     end_ms,
@@ -170,12 +201,14 @@ pub fn reconstruct_segments(events: &[RawEvent]) -> Vec<ActivitySegment> {
                     source: current.source,
                     event_count: 1,
                     browser_context: final_ctx,
+                    category: class_res.category,
+                    classification: Some(class_res),
                 });
             }
         }
     }
 
-    // 2. Coalesce adjacent contiguous segments with identical app, title, and activity_type
+    // 2. Coalesce adjacent contiguous segments with identical app, title, activity_type, and category
     coalesce_segments(raw_segments)
 }
 
@@ -197,8 +230,9 @@ fn coalesce_segments(segments: Vec<ActivitySegment>) -> Vec<ActivitySegment> {
             let same_title = last.title == seg.title;
             let same_type = last.activity_type == seg.activity_type;
             let same_ctx = last.browser_context == seg.browser_context;
+            let same_cat = last.category == seg.category;
 
-            if contiguous && same_app && same_title && same_type && same_ctx {
+            if contiguous && same_app && same_title && same_type && same_ctx && same_cat {
                 last.end_ms = seg.end_ms;
                 last.event_count += seg.event_count;
                 continue;
