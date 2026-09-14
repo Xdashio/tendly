@@ -79,11 +79,11 @@ impl CapturePipeline {
         &self,
         mut rx: Receiver<RawEvent>,
         db: DatabaseManager,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tauri::async_runtime::JoinHandle<()> {
         self.is_running.store(true, Ordering::SeqCst);
         let is_running = Arc::clone(&self.is_running);
 
-        tokio::spawn(async move {
+        let fut = async move {
             let mut filter = DeduplicationFilter::default();
 
             while is_running.load(Ordering::SeqCst) {
@@ -112,7 +112,13 @@ impl CapturePipeline {
                     }
                 }
             }
-        })
+        };
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            tauri::async_runtime::JoinHandle::Tokio(handle.spawn(fut))
+        } else {
+            tauri::async_runtime::spawn(fut)
+        }
     }
 
     pub fn stop(&self) {
